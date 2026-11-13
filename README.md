@@ -5,8 +5,9 @@ Hulu Market is a monorepo-style project with two independent npm applications:
 - `frontend/` — Next.js App Router, TypeScript, Tailwind CSS, and ESLint.
 - `backend/` — Express.js and TypeScript API.
 
-The starter applications expose basic health responses only. No marketplace UI,
-database, or ORM is included.
+The frontend includes the Hulu Market navigation shell. Marketplace pages,
+database, and ORM are not included. The backend exposes its health response at
+`/health`, and the frontend exposes one at `/api/health`.
 
 ## Requirements
 
@@ -23,8 +24,8 @@ npm install
 npm run dev
 ```
 
-The frontend runs at <http://localhost:3000>. Its root route returns a JSON
-health response.
+The frontend runs at <http://localhost:3000>. Its root route displays the
+Hulu Market navigation shell.
 
 ## Run the backend
 
@@ -60,7 +61,8 @@ npm start
 
 ```text
 frontend/
-  app/                 Next.js App Router layout and root health route
+  app/                 Next.js App Router layout, landing page, and health route
+  components/layout/   Reusable desktop and mobile sidebar navigation
   public/              Static assets
   .env.example         Frontend environment-variable example
   next.config.ts       Next.js configuration

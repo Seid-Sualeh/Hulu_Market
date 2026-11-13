@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import MobileSidebar from "../components/layout/MobileSidebar";
+import Sidebar from "../components/layout/Sidebar";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +15,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="min-h-screen bg-[#0b0f14] text-slate-100 antialiased">
+        <div className="flex min-h-screen">
+          <Sidebar />
+          <div className="min-w-0 flex-1 px-5 pb-10 pt-20 lg:px-10 lg:py-10">
+            {children}
+          </div>
+        </div>
+        <MobileSidebar />
+      </body>
     </html>
   );
 }
