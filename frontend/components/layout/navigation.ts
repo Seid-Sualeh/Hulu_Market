@@ -4,20 +4,22 @@ import {
   CarFront,
   Clapperboard,
   Compass,
+  GraduationCap,
   Heart,
+  Home,
   House,
   Inbox,
   LayoutDashboard,
+  ListOrdered,
   LogOut,
   Monitor,
   PanelsTopLeft,
   Plus,
+  Radio,
   Settings,
   ShieldCheck,
   ShoppingBag,
-  Smartphone,
   UserRound,
-  Wrench,
 } from "lucide-react";
 
 export type NavigationLink = {
@@ -31,7 +33,7 @@ export type NavigationGroup = {
   type: "group";
   label: string;
   icon: LucideIcon;
-  items: NavigationEntry[];
+  items: NavigationLink[];
 };
 
 export type NavigationEntry = NavigationLink | NavigationGroup;
@@ -41,50 +43,24 @@ export const navigationSections: {
   items: NavigationEntry[];
 }[] = [
   {
-    label: "Discover",
+    label: "Main",
     items: [
-      { type: "link", label: "Dashboard", href: "/", icon: LayoutDashboard },
+      {
+        type: "link",
+        label: "Dashboard",
+        href: "/",
+        icon: LayoutDashboard,
+      },
       {
         type: "group",
         label: "Marketplace",
-        icon: Compass,
+        icon: ShoppingBag,
         items: [
           {
-            type: "group",
+            type: "link",
             label: "Social Media Channels",
+            href: "/social-media",
             icon: PanelsTopLeft,
-            items: [
-              {
-                type: "link",
-                label: "Telegram",
-                href: "/social-media/telegram",
-                icon: Smartphone,
-              },
-              {
-                type: "link",
-                label: "YouTube",
-                href: "/social-media/youtube",
-                icon: Clapperboard,
-              },
-              {
-                type: "link",
-                label: "Facebook",
-                href: "/social-media/facebook",
-                icon: UserRound,
-              },
-              {
-                type: "link",
-                label: "Instagram",
-                href: "/social-media/instagram",
-                icon: PanelsTopLeft,
-              },
-              {
-                type: "link",
-                label: "TikTok",
-                href: "/social-media/tiktok",
-                icon: Clapperboard,
-              },
-            ],
           },
           {
             type: "link",
@@ -120,37 +96,45 @@ export const navigationSections: {
             type: "link",
             label: "Home & Furniture",
             href: "/home-furniture",
-            icon: House,
+            icon: Home,
           },
         ],
       },
-      { type: "link", label: "Services", href: "/services", icon: Wrench },
-    ],
-  },
-  {
-    label: "Your space",
-    items: [
       {
         type: "link",
-        label: "Sell / Create Listing",
+        label: "Sell",
         href: "/sell",
         icon: Plus,
       },
-      { type: "link", label: "Favorites", href: "/favorites", icon: Heart },
-      { type: "link", label: "Inbox", href: "/inbox", icon: Inbox },
+      {
+        type: "link",
+        label: "Inbox",
+        href: "/inbox",
+        icon: Inbox,
+      },
     ],
   },
   {
     label: "Account",
     items: [
-      { type: "link", label: "Profile", href: "/profile", icon: UserRound },
+      {
+        type: "link",
+        label: "Profile",
+        href: "/profile",
+        icon: UserRound,
+      },
       {
         type: "link",
         label: "Security",
         href: "/security",
         icon: ShieldCheck,
       },
-      { type: "link", label: "Settings", href: "/settings", icon: Settings },
+      {
+        type: "link",
+        label: "Channels",
+        href: "/channels",
+        icon: ListOrdered,
+      },
     ],
   },
 ];
