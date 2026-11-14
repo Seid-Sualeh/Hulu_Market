@@ -13,17 +13,13 @@ import {
   House,
   Info,
   Link as LinkIcon,
-  Lock,
   Monitor,
   PanelsTopLeft,
   Phone,
-  Send,
   ShieldCheck,
   TrendingUp,
   Upload,
-  User,
   Users,
-  X,
 } from "lucide-react";
 
 export type MarketplaceCategory =
@@ -56,7 +52,7 @@ export default function SellPage() {
   const [category, setCategory] = useState("");
   const [followers, setFollowers] = useState("");
   const [description, setDescription] = useState("");
-  const [telegramUsername, setTelegramUsername] = useState("");
+  const [platformUsername, setPlatformUsername] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [price, setPrice] = useState("");
   const [agreed, setAgreed] = useState(false);
@@ -166,6 +162,96 @@ export default function SellPage() {
     },
   ];
 
+  // Dynamic Contact & Platform Details
+  const platformContactConfig: Record<
+    SocialPlatform,
+    {
+      platformName: string;
+      label: string;
+      placeholder: string;
+      dotColor: string;
+      borderFocus: string;
+      linkPlaceholder: string;
+      icon: React.ReactNode;
+      hint: string;
+    }
+  > = {
+    telegram: {
+      platformName: "Telegram",
+      label: "Telegram Username *",
+      placeholder: "@username",
+      dotColor: "bg-cyan-400",
+      borderFocus: "focus-within:border-cyan-400",
+      linkPlaceholder: "https://t.me/yourchannel",
+      hint: "Example: @seid_sualeh",
+      icon: (
+        <svg className="size-4" viewBox="0 0 24 24" fill="currentColor">
+          <path d="m20.665 3.717-17.73 6.837c-1.21.486-1.203 1.161-.222 1.462l4.552 1.42 10.532-6.645c.498-.303.953-.14.579.192l-8.533 7.701h-.002l-.313 4.67c.458 0 .66-.21.916-.458l2.199-2.138 4.573 3.378c.843.465 1.45.225 1.66-.782l3.003-14.152c.307-1.23-.468-1.787-1.214-1.465z" />
+        </svg>
+      ),
+    },
+    youtube: {
+      platformName: "YouTube",
+      label: "YouTube Username *",
+      placeholder: "@channelhandle",
+      dotColor: "bg-red-500",
+      borderFocus: "focus-within:border-red-500",
+      linkPlaceholder: "https://youtube.com/@yourchannel",
+      hint: "Example: @HuluMedia or @EthioTube",
+      icon: (
+        <svg className="size-4 text-red-500" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+        </svg>
+      ),
+    },
+    instagram: {
+      platformName: "Instagram",
+      label: "Instagram Username *",
+      placeholder: "@username",
+      dotColor: "bg-pink-500",
+      borderFocus: "focus-within:border-pink-500",
+      linkPlaceholder: "https://instagram.com/yourhandle",
+      hint: "Example: @seid.lifestyle or @brand_account",
+      icon: (
+        <svg className="size-4 text-pink-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+          <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+          <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+        </svg>
+      ),
+    },
+    tiktok: {
+      platformName: "TikTok",
+      label: "TikTok Username *",
+      placeholder: "@username",
+      dotColor: "bg-cyan-400",
+      borderFocus: "focus-within:border-cyan-400",
+      linkPlaceholder: "https://tiktok.com/@yourhandle",
+      hint: "Example: @seid_tiktok or @creator_hub",
+      icon: (
+        <svg className="size-4 text-cyan-300" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.04-.1z" />
+        </svg>
+      ),
+    },
+    facebook: {
+      platformName: "Facebook",
+      label: "Facebook Username *",
+      placeholder: "@username or Page Name",
+      dotColor: "bg-blue-500",
+      borderFocus: "focus-within:border-blue-500",
+      linkPlaceholder: "https://facebook.com/yourpage",
+      hint: "Example: @seid.official or Page Vanity URL",
+      icon: (
+        <svg className="size-4 text-blue-400" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+        </svg>
+      ),
+    },
+  };
+
+  const currentContactConfig = platformContactConfig[selectedPlatform];
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -189,7 +275,7 @@ export default function SellPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 pb-20">
-      {/* 1. SELECT MARKETPLACE (Top Section as requested) */}
+      {/* 1. SELECT MARKETPLACE (Top Section) */}
       <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-5 sm:p-6 shadow-md">
         <div className="mb-4">
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-teal-400">
@@ -263,9 +349,15 @@ export default function SellPage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Sub-platform selector */}
           <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-5 shadow-md">
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              SELECT PLATFORM
-            </p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                SELECT PLATFORM
+              </p>
+              <span className="text-xs font-semibold text-teal-400">
+                Active: {currentContactConfig.platformName}
+              </span>
+            </div>
+
             <div className="grid grid-cols-5 gap-3">
               {socialPlatforms.map((p) => {
                 const isSelected = selectedPlatform === p.id;
@@ -305,7 +397,7 @@ export default function SellPage() {
                 </div>
                 <div>
                   <h2 className="text-sm font-bold uppercase tracking-wide text-white">
-                    CHANNEL INFORMATION
+                    {currentContactConfig.platformName.toUpperCase()} CHANNEL INFORMATION
                   </h2>
                   <p className="text-[11px] text-slate-400">
                     Provide accurate statistics and proof of ownership
@@ -328,7 +420,7 @@ export default function SellPage() {
                   </div>
 
                   <p className="text-xs leading-relaxed text-slate-300">
-                    Upload a screenshot of your channel/account Front Page dashboard showing Your logo, followers, views, and other stats. Our team uses this to verify your listing.{" "}
+                    Upload a screenshot of your {currentContactConfig.platformName} channel/account Front Page dashboard showing Your logo, followers, views, and other stats. Our team uses this to verify your listing.{" "}
                     <span className="text-amber-400 font-semibold">
                       ⚠️ Don&apos;t crop any things.
                     </span>
@@ -386,10 +478,10 @@ export default function SellPage() {
             {/* Channel Link */}
             <div className="space-y-1.5">
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                <span className="size-2 rounded-full bg-cyan-400" />
-                Channel Link
+                <span className={`size-2 rounded-full ${currentContactConfig.dotColor}`} />
+                {currentContactConfig.platformName} Channel Link *
               </label>
-              <div className="relative flex items-center rounded-xl border border-white/[0.08] bg-[#0c1017] focus-within:border-cyan-400 transition">
+              <div className={`relative flex items-center rounded-xl border border-white/[0.08] bg-[#0c1017] ${currentContactConfig.borderFocus} transition`}>
                 <span className="pl-3.5 text-slate-500">
                   <LinkIcon size={15} />
                 </span>
@@ -398,7 +490,7 @@ export default function SellPage() {
                   required
                   value={channelLink}
                   onChange={(e) => setChannelLink(e.target.value)}
-                  placeholder="Channel URL..."
+                  placeholder={currentContactConfig.linkPlaceholder}
                   className="w-full bg-transparent px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                 />
               </div>
@@ -438,7 +530,7 @@ export default function SellPage() {
               <div className="space-y-1.5">
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
                   <span className="size-2 rounded-full bg-emerald-400" />
-                  Followers *
+                  Followers / Subscribers *
                 </label>
                 <div className="relative flex items-center rounded-xl border border-white/[0.08] bg-[#0c1017] focus-within:border-emerald-400 transition">
                   <span className="pl-3.5 text-slate-500">
@@ -473,7 +565,7 @@ export default function SellPage() {
             </div>
           </div>
 
-          {/* STEP 02: YOUR CONTACT */}
+          {/* STEP 02: YOUR CONTACT (100% Dynamic Label & Placeholder) */}
           <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-6">
             <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
               <div className="flex items-center gap-3">
@@ -494,32 +586,63 @@ export default function SellPage() {
               </span>
             </div>
 
+            {/* Quick Contact Platform Picker */}
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-slate-400">
+                Contact Handle Platform:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {socialPlatforms.map((p) => {
+                  const isCur = selectedPlatform === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSelectedPlatform(p.id)}
+                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                        isCur
+                          ? "bg-teal-500 text-slate-950 font-bold shadow-sm"
+                          : "bg-white/[0.05] text-slate-400 hover:text-white hover:bg-white/[0.08]"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {/* Telegram Username */}
+              {/* Dynamic Platform Username Field */}
               <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                  <span className="size-2 rounded-full bg-cyan-400" />
-                  Telegram Username *
+                <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                  <span className={`size-2.5 rounded-full ${currentContactConfig.dotColor}`} />
+                  <span className="text-teal-300 font-bold">
+                    {currentContactConfig.label}
+                  </span>
                 </label>
-                <div className="relative flex items-center rounded-xl border border-white/[0.08] bg-[#0c1017] focus-within:border-cyan-400 transition">
-                  <span className="pl-3.5 text-slate-500">
-                    <Send size={14} />
+                <div className={`relative flex items-center rounded-xl border border-white/[0.08] bg-[#0c1017] ${currentContactConfig.borderFocus} transition`}>
+                  <span className="pl-3.5 text-slate-400">
+                    {currentContactConfig.icon}
                   </span>
                   <input
                     type="text"
                     required
-                    value={telegramUsername}
-                    onChange={(e) => setTelegramUsername(e.target.value)}
-                    placeholder="@username"
+                    value={platformUsername}
+                    onChange={(e) => setPlatformUsername(e.target.value)}
+                    placeholder={currentContactConfig.placeholder}
                     className="w-full bg-transparent px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none"
                   />
                 </div>
+                <p className="text-[10px] text-slate-400">
+                  {currentContactConfig.hint}
+                </p>
               </div>
 
               {/* Phone Number */}
               <div className="space-y-1.5">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-                  <span className="size-2 rounded-full bg-purple-400" />
+                <label className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                  <span className="size-2.5 rounded-full bg-purple-400" />
                   Phone Number *
                 </label>
                 <div className="relative flex items-center rounded-xl border border-white/[0.08] bg-[#0c1017] focus-within:border-purple-400 transition">
@@ -628,7 +751,7 @@ export default function SellPage() {
                 <span>Submitting Listing...</span>
               ) : (
                 <>
-                  <span>List Channel</span>
+                  <span>List {currentContactConfig.platformName} Channel</span>
                   <ArrowRight size={18} />
                 </>
               )}
