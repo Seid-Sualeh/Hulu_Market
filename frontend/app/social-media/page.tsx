@@ -1,14 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Coins, Filter, Search, X, Zap } from "lucide-react";
 import PlatformFilter from "@/components/social-media/PlatformFilter";
 import ChannelCard from "@/components/social-media/ChannelCard";
 import PromoBanner from "@/components/social-media/PromoBanner";
 import { initialChannels } from "@/components/social-media/mockData";
 import { ChannelItem, PlatformType } from "@/components/social-media/types";
+import { isUserSignedIn } from "@/lib/auth";
 
 export default function SocialMediaPage() {
+  const router = useRouter();
   const [platform, setPlatform] = useState<PlatformType>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<ChannelItem | null>(
@@ -35,6 +38,12 @@ export default function SocialMediaPage() {
   const secondBatch = filteredChannels.slice(2);
 
   const handleBuy = (channel: ChannelItem) => {
+    // If user is not signed in, redirect to auth page
+    if (!isUserSignedIn()) {
+      router.push(`/auth?redirect=${encodeURIComponent("/social-media")}`);
+      return;
+    }
+
     setPurchaseSuccess(
       `Purchase initiated for "${channel.name}" (${channel.price}). Escrow transaction pending.`,
     );

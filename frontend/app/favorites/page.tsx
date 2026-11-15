@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -28,7 +28,7 @@ interface FavoriteItem {
   title: string;
   category: string;
   categorySlug: string;
-  platform?: "telegram" | "youtube" | "tiktok" | "instagram" | "other";
+  platform?: "telegram" | "youtube" | "tiktok" | "instagram" | "facebook" | "other";
   spec: string;
   price: number;
   location?: string;
@@ -37,73 +37,142 @@ interface FavoriteItem {
   handle?: string;
 }
 
+const DEFAULT_DEMO_FAVORITES: FavoriteItem[] = [
+  {
+    id: "ch-1",
+    title: "Siifan",
+    category: "Social Media Channels",
+    categorySlug: "social-media",
+    platform: "facebook",
+    handle: "Open on Facebook",
+    spec: "58K Followers • 116 Page Likes",
+    price: 16640,
+    savedDate: "Saved 2 days ago",
+    verified: true,
+  },
+  {
+    id: "ch-2",
+    title: "USTAZ KHALID (Official)",
+    category: "Social Media Channels",
+    categorySlug: "social-media",
+    platform: "tiktok",
+    handle: "Open on TikTok",
+    spec: "12K Followers • 79K Total Likes",
+    price: 4550,
+    savedDate: "Saved 3 days ago",
+    verified: true,
+  },
+  {
+    id: "fav-house-1",
+    title: "Luxury 3-Bed Apartment (Bole Atlas)",
+    category: "Houses & Properties",
+    categorySlug: "houses-properties",
+    spec: "185 sqm • 3 Bed 2 Bath • 5th Floor",
+    price: 18500000,
+    location: "Addis Ababa, Bole Atlas",
+    savedDate: "Saved 4 days ago",
+    verified: true,
+  },
+  {
+    id: "fav-veh-1",
+    title: "Toyota RAV4 2022 (Hybrid, Full Option)",
+    category: "Vehicles",
+    categorySlug: "vehicles",
+    spec: "Automatic • 18,000 km • Pearl White",
+    price: 7800000,
+    location: "Addis Ababa",
+    savedDate: "Saved 1 week ago",
+    verified: true,
+  },
+];
+
 export default function FavoritesPage() {
-  const [showDemoFavorites, setShowDemoFavorites] = useState(true);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [mounted, setMounted] = useState<boolean>(false);
 
-  const [favorites, setFavorites] = useState<FavoriteItem[]>([
-    {
-      id: "fav-1",
-      title: "Ethio Tech & Startup Hub",
-      category: "Social Media Channels",
-      categorySlug: "social-media",
-      platform: "telegram",
-      handle: "@ethio_tech_hub",
-      spec: "64,200 members • Daily Tech News",
-      price: 32000,
-      savedDate: "Saved 2 days ago",
-      verified: true,
-    },
-    {
-      id: "fav-2",
-      title: "Luxury 3-Bed Apartment (Bole Atlas)",
-      category: "Houses & Properties",
-      categorySlug: "houses-properties",
-      spec: "185 sqm • 3 Bed 2 Bath • 5th Floor",
-      price: 18500000,
-      location: "Addis Ababa, Bole Atlas",
-      savedDate: "Saved 4 days ago",
-      verified: true,
-    },
-    {
-      id: "fav-3",
-      title: "Toyota RAV4 2022 (Hybrid, Full Option)",
-      category: "Vehicles",
-      categorySlug: "vehicles",
-      spec: "Automatic • 18,000 km • Pearl White",
-      price: 7800000,
-      location: "Addis Ababa",
-      savedDate: "Saved 1 week ago",
-      verified: true,
-    },
-    {
-      id: "fav-4",
-      title: "Habesha Gourmet Cooking Academy",
-      category: "Social Media Channels",
-      categorySlug: "social-media",
-      platform: "youtube",
-      handle: "@habeshacooking",
-      spec: "118,000 subscribers • Monetized",
-      price: 48000,
-      savedDate: "Saved 2 weeks ago",
-      verified: true,
-    },
-  ]);
+  // Sync favorites with localStorage
+  useEffect(() => {
+    setMounted(true);
+    const loadFavorites = () => {
+      try {
+        const stored = localStorage.getItem("hulu_favorites");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setFavorites(parsed);
+            return;
+          }
+        }
+        // If empty in localStorage, initialize with demo favorites
+        setFavorites(DEFAULT_DEMO_FAVORITES);
+        localStorage.setItem("hulu_favorites", JSON.stringify(DEFAULT_DEMO_FAVORITES));
+      } catch {
+        setFavorites(DEFAULT_DEMO_FAVORITES);
+      }
+    };
 
-  const displayedList = showDemoFavorites ? favorites : [];
+    loadFavorites();
 
-  const filteredList = displayedList.filter((item) => {
-    if (selectedCategory === "All") return true;
-    return item.category === selectedCategory;
-  });
+    const handleSync = () => {
+      try {
+        const stored = localStorage.getItem("hulu_favorites");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setFavorites(parsed);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("hulu_favorites_updated", handleSync);
+    window.addEventListener("storage", handleSync);
+    return () => {
+      window.removeEventListener("hulu_favorites_updated", handleSync);
+      window.removeEventListener("storage", handleSync);
+    };
+  }, []);
 
   const removeFavorite = (id: string) => {
-    setFavorites((prev) => prev.filter((item) => item.id !== id));
+    setFavorites((prev) => {
+      const updated = prev.filter((item) => item.id !== id);
+      try {
+        localStorage.setItem("hulu_favorites", JSON.stringify(updated));
+        window.dispatchEvent(new Event("hulu_favorites_updated"));
+      } catch {
+        // ignore
+      }
+      return updated;
+    });
   };
 
   const clearAllFavorites = () => {
     setFavorites([]);
+    try {
+      localStorage.setItem("hulu_favorites", JSON.stringify([]));
+      window.dispatchEvent(new Event("hulu_favorites_updated"));
+    } catch {
+      // ignore
+    }
   };
+
+  const restoreDemoFavorites = () => {
+    setFavorites(DEFAULT_DEMO_FAVORITES);
+    try {
+      localStorage.setItem("hulu_favorites", JSON.stringify(DEFAULT_DEMO_FAVORITES));
+      window.dispatchEvent(new Event("hulu_favorites_updated"));
+    } catch {
+      // ignore
+    }
+  };
+
+  const filteredList = favorites.filter((item) => {
+    if (selectedCategory === "All") return true;
+    return item.category === selectedCategory;
+  });
 
   return (
     <div className="min-h-screen bg-[#0b0f17] text-slate-100 p-4 md:p-8 lg:p-10">
@@ -121,7 +190,7 @@ export default function FavoritesPage() {
                   Favorites
                 </h1>
                 <span className="text-[11px] px-2.5 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                  {displayedList.length} saved
+                  {favorites.length} saved
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
@@ -134,14 +203,14 @@ export default function FavoritesPage() {
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
               type="button"
-              onClick={() => setShowDemoFavorites(!showDemoFavorites)}
+              onClick={restoreDemoFavorites}
               className="px-3.5 py-2 rounded-xl border border-slate-700/80 bg-[#161d2b]/70 hover:bg-[#1a2333] text-xs font-medium text-slate-300 transition-colors flex items-center gap-1.5"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{showDemoFavorites ? "Show Empty State" : "Restore Demo Favorites"}</span>
+              <span>Reset Demo Items</span>
             </button>
 
-            {displayedList.length > 0 && (
+            {favorites.length > 0 && (
               <button
                 type="button"
                 onClick={clearAllFavorites}
@@ -163,7 +232,7 @@ export default function FavoritesPage() {
         </div>
 
         {/* Category Filters Bar */}
-        {displayedList.length > 0 && (
+        {favorites.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
             {["All", "Social Media Channels", "Houses & Properties", "Vehicles"].map((cat) => (
               <button
@@ -184,8 +253,8 @@ export default function FavoritesPage() {
 
         {/* Content Area */}
         <div className="min-h-[420px]">
-          {displayedList.length === 0 || filteredList.length === 0 ? (
-            /* Empty State matching design system */
+          {favorites.length === 0 || filteredList.length === 0 ? (
+            /* Empty State */
             <div className="bg-[#111722]/60 border border-slate-800/80 rounded-2xl p-12 text-center max-w-sm mx-auto space-y-4 my-8">
               <div className="w-16 h-16 rounded-2xl bg-[#18202d] border border-slate-700/60 flex items-center justify-center text-slate-500 mx-auto shadow-inner">
                 <StarOff className="w-8 h-8 stroke-[1.5]" />
