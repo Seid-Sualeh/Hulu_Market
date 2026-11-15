@@ -2,14 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useId } from "react";
-import { ChevronDown, Coins, LogOut, User } from "lucide-react";
+import { useState } from "react";
+import {
+  ChevronDown,
+  Coins,
+  LogIn,
+  LogOut,
+  User,
+} from "lucide-react";
 import {
   brandIcon as BrandIcon,
   navigationSections,
   type NavigationEntry,
   type NavigationLink,
 } from "./navigation";
+import { useAuth } from "@/lib/auth";
 
 function isCurrentPath(pathname: string, href: string) {
   return href === "/"
@@ -22,18 +29,24 @@ function NavigationLinkItem({
   pathname,
   onNavigate,
   isChild = false,
+  signedIn = false,
 }: {
   item: NavigationLink;
   pathname: string;
   onNavigate?: () => void;
   isChild?: boolean;
+  signedIn?: boolean;
 }) {
   const Icon = item.icon;
+  const isDashboard = item.label === "Dashboard" || item.href === "/dashboard";
+  
+  // If guest clicks dashboard, redirect to auth page
+  const targetHref = !signedIn && isDashboard ? "/auth?redirect=/dashboard" : item.href;
   const active = isCurrentPath(pathname, item.href);
 
   return (
     <Link
-      href={item.href}
+      href={targetHref}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={`group flex min-h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-medium transition-all duration-150 ${
@@ -70,17 +83,22 @@ function NavigationEntryItem({
   pathname,
   onNavigate,
   controlId,
+  signedIn = false,
 }: {
   item: NavigationEntry;
   pathname: string;
   onNavigate?: () => void;
   controlId: string;
+  signedIn?: boolean;
 }) {
   const isAnyChildActive =
     item.type === "group" &&
-    item.items.some((child) => isCurrentPath(pathname, child.href));
+    (item.items.some((child) => isCurrentPath(pathname, child.href)) ||
+      pathname === "/social-media" ||
+      pathname.startsWith("/social-media/") ||
+      pathname.startsWith("/marketplace"));
 
-  const [expanded, setExpanded] = useState<boolean>(true);
+  const [expanded, setExpanded] = useState<boolean>(false);
 
   if (item.type === "link") {
     return (
@@ -88,6 +106,7 @@ function NavigationEntryItem({
         item={item}
         pathname={pathname}
         onNavigate={onNavigate}
+        signedIn={signedIn}
       />
     );
   }
@@ -96,38 +115,51 @@ function NavigationEntryItem({
 
   return (
     <div>
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={controlId}
-        onClick={() => setExpanded(!expanded)}
-        className={`group flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[13px] font-medium transition-all duration-150 ${
+      <div
+        className={`group flex min-h-10 w-full items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 ${
           isAnyChildActive
-            ? "bg-teal-500/10 text-teal-300 ring-1 ring-inset ring-teal-500/20"
+            ? "bg-teal-500/15 text-teal-300 ring-1 ring-inset ring-teal-500/30 font-semibold shadow-sm shadow-teal-950/40"
             : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
         }`}
       >
-        <Icon
-          aria-hidden="true"
-          size={18}
-          strokeWidth={isAnyChildActive ? 2.2 : 1.8}
-          className={
-            isAnyChildActive
-              ? "shrink-0 text-teal-400"
-              : "shrink-0 text-slate-500 transition-colors group-hover:text-slate-300"
-          }
-        />
-        <span className="min-w-0 flex-1 truncate font-semibold">
-          {item.label}
-        </span>
-        <ChevronDown
-          aria-hidden="true"
-          size={15}
-          className={`shrink-0 text-slate-500 transition-transform duration-200 ${
-            expanded ? "rotate-180 text-teal-400" : ""
-          }`}
-        />
-      </button>
+        <Link
+          href="/social-media"
+          onClick={onNavigate}
+          className="flex flex-1 items-center gap-3 min-w-0"
+        >
+          <Icon
+            aria-hidden="true"
+            size={18}
+            strokeWidth={isAnyChildActive ? 2.2 : 1.8}
+            className={
+              isAnyChildActive
+                ? "shrink-0 text-teal-400"
+                : "shrink-0 text-slate-500 transition-colors group-hover:text-slate-300"
+            }
+          />
+          <span className="min-w-0 flex-1 truncate font-semibold">
+            {item.label}
+          </span>
+        </Link>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={controlId}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(!expanded);
+          }}
+          className="p-1 text-slate-500 hover:text-teal-300 transition"
+        >
+          <ChevronDown
+            aria-hidden="true"
+            size={15}
+            className={`shrink-0 transition-transform duration-200 ${
+              expanded ? "rotate-180 text-teal-400" : ""
+            }`}
+          />
+        </button>
+      </div>
       {expanded && (
         <div
           id={controlId}
@@ -139,6 +171,7 @@ function NavigationEntryItem({
               item={child}
               pathname={pathname}
               onNavigate={onNavigate}
+              signedIn={signedIn}
               isChild
             />
           ))}
@@ -194,6 +227,22 @@ export function UserProfileFooter({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+// Guest Sign In pill button matching reference design image
+export function GuestSignInFooter({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <div className="border-t border-white/[0.08] p-3 pt-4">
+      <Link
+        href="/auth"
+        onClick={onNavigate}
+        className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-amber-500/30 bg-[#161d2b]/80 hover:bg-amber-500/10 hover:border-amber-500/50 text-amber-300 hover:text-amber-200 text-xs font-bold uppercase tracking-wider transition-all shadow-sm"
+      >
+        <LogIn size={16} className="text-amber-400" />
+        <span>Sign in</span>
+      </Link>
+    </div>
+  );
+}
+
 export function SidebarNavigation({
   onNavigate,
   idPrefix = "sidebar",
@@ -202,6 +251,12 @@ export function SidebarNavigation({
   idPrefix?: string;
 }) {
   const pathname = usePathname() ?? "/";
+  const { signedIn, mounted } = useAuth();
+
+  // In guest mode (without sign-in), only show Main section (Dashboard, Marketplace, Sell, Inbox)
+  const visibleSections = mounted && signedIn
+    ? navigationSections
+    : navigationSections.filter((section) => section.label === "Main");
 
   return (
     <>
@@ -209,7 +264,7 @@ export function SidebarNavigation({
         aria-label="Main navigation"
         className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 py-4 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]"
       >
-        {navigationSections.map((section) => (
+        {visibleSections.map((section) => (
           <section key={section.label} aria-label={section.label}>
             {section.label && (
               <h2 className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
@@ -223,6 +278,7 @@ export function SidebarNavigation({
                   item={item}
                   pathname={pathname}
                   onNavigate={onNavigate}
+                  signedIn={mounted ? signedIn : false}
                   controlId={`${idPrefix}-nav-${index}`}
                 />
               ))}
@@ -230,7 +286,13 @@ export function SidebarNavigation({
           </section>
         ))}
       </nav>
-      <UserProfileFooter onNavigate={onNavigate} />
+
+      {/* Conditionally render Guest Sign In button or User Profile Footer */}
+      {mounted && signedIn ? (
+        <UserProfileFooter onNavigate={onNavigate} />
+      ) : (
+        <GuestSignInFooter onNavigate={onNavigate} />
+      )}
     </>
   );
 }

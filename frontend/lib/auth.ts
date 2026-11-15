@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 export interface AuthUser {
   name: string;
   email: string;
@@ -46,4 +50,30 @@ export function signOutUser(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(AUTH_STORAGE_KEY);
   window.dispatchEvent(new Event("hulu_auth_state_changed"));
+}
+
+export function useAuth() {
+  const [signedIn, setSignedIn] = useState<boolean>(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [mounted, setMounted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const syncState = () => {
+      const u = getAuthUser();
+      setUser(u);
+      setSignedIn(Boolean(u && u.signedIn));
+    };
+
+    syncState();
+
+    window.addEventListener("hulu_auth_state_changed", syncState);
+    window.addEventListener("storage", syncState);
+    return () => {
+      window.removeEventListener("hulu_auth_state_changed", syncState);
+      window.removeEventListener("storage", syncState);
+    };
+  }, []);
+
+  return { signedIn, user, mounted };
 }

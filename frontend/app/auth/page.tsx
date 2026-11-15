@@ -8,7 +8,16 @@ import { Suspense } from "react";
 function AuthLanding() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/social-media";
+  const redirectParam = searchParams.get("redirect");
+  
+  // Safe redirect for login (never loop back to /auth or /dashboard for guests)
+  const signInRedirect = redirectParam && redirectParam !== "/" && redirectParam !== "/dashboard"
+    ? redirectParam
+    : "/social-media";
+
+  const handleGuestClick = () => {
+    router.push("/social-media");
+  };
 
   return (
     <div className="min-h-screen bg-[#0b0f17] flex flex-col items-center justify-center p-4 relative overflow-hidden select-none">
@@ -35,7 +44,7 @@ function AuthLanding() {
         <div className="w-full space-y-3 pt-3">
           {/* SIGN IN Button */}
           <Link
-            href={`/signin?redirect=${encodeURIComponent(redirect)}`}
+            href={`/signin?redirect=${encodeURIComponent(signInRedirect)}`}
             className="block w-full py-3.5 rounded-xl bg-[#d4af37] hover:bg-[#c49e29] active:scale-[0.99] text-slate-950 font-bold uppercase tracking-wider text-xs md:text-sm transition-all shadow-lg shadow-amber-500/15"
           >
             SIGN IN
@@ -43,18 +52,18 @@ function AuthLanding() {
 
           {/* Create Account Button */}
           <Link
-            href={`/signup?redirect=${encodeURIComponent(redirect)}`}
+            href={`/signup?redirect=${encodeURIComponent(signInRedirect)}`}
             className="block w-full py-3.5 rounded-xl border border-[#d4af37]/60 bg-[#111722]/80 hover:bg-[#161d2b] text-[#d4af37] font-semibold text-xs md:text-sm transition-all"
           >
             Create Account
           </Link>
         </div>
 
-        {/* Continue as Guest Link */}
+        {/* Continue as Guest Link - Guaranteed direct navigation to Marketplace */}
         <div className="pt-2">
           <Link
-            href={redirect}
-            className="text-xs md:text-sm font-semibold text-teal-400 hover:text-teal-300 transition-colors"
+            href="/social-media"
+            className="text-xs md:text-sm font-semibold text-teal-400 hover:text-teal-300 transition-colors inline-block py-1"
           >
             Continue as Guest
           </Link>

@@ -9,7 +9,10 @@ import { signInUser } from "@/lib/auth";
 function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/social-media";
+  const redirectParam = searchParams.get("redirect");
+  const redirect = redirectParam && redirectParam !== "/" && redirectParam !== "/dashboard"
+    ? redirectParam
+    : "/social-media";
 
   const [email, setEmail] = useState("sualehseid@gmail.com");
   const [password, setPassword] = useState("password123");
@@ -24,10 +27,6 @@ function SignInContent() {
       setLoading(false);
       router.push(redirect);
     }, 400);
-  };
-
-  const handleGuest = () => {
-    router.push(redirect);
   };
 
   return (
@@ -120,15 +119,14 @@ function SignInContent() {
             <div className="flex-1 border-t border-slate-800" />
           </div>
 
-          {/* Continue as Guest Button */}
-          <button
-            type="button"
-            onClick={handleGuest}
+          {/* Continue as Guest Button - Direct link to /social-media */}
+          <Link
+            href="/social-media"
             className="w-full py-3 rounded-xl border border-slate-800 bg-[#111722]/80 hover:bg-[#161d2b] text-slate-200 text-xs md:text-sm font-semibold transition-all flex items-center justify-center gap-2"
           >
             <Compass className="w-4 h-4 text-teal-400" />
             <span>Continue as Guest</span>
-          </button>
+          </Link>
         </form>
 
         {/* Bottom Signup Link */}

@@ -75,7 +75,7 @@ export default function SocialMediaPage() {
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
             Listing Channel
           </h1>
-          <p className="mt-1 text-xs text-slate-400 font-medium">_ channels</p>
+          <p className="mt-1 text-xs text-slate-400 font-medium">3,726 channels</p>
         </div>
 
         <button

@@ -48,7 +48,7 @@ export const navigationSections: {
       {
         type: "link",
         label: "Dashboard",
-        href: "/",
+        href: "/dashboard",
         icon: LayoutDashboard,
       },
       {
