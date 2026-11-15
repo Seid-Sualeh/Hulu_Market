@@ -1,10 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  ArrowLeftRight,
+  Bell,
   BookOpen,
   CarFront,
   Clapperboard,
-  Compass,
-  GraduationCap,
+  CreditCard,
   Heart,
   Home,
   House,
@@ -15,10 +16,9 @@ import {
   Monitor,
   PanelsTopLeft,
   Plus,
-  Radio,
-  Settings,
   ShieldCheck,
   ShoppingBag,
+  Star,
   UserRound,
 } from "lucide-react";
 
@@ -134,6 +134,36 @@ export const navigationSections: {
         label: "Channels",
         href: "/channels",
         icon: ListOrdered,
+      },
+      {
+        type: "link",
+        label: "Favorites",
+        href: "/favorites",
+        icon: Star,
+      },
+      {
+        type: "link",
+        label: "Transactions",
+        href: "/transactions",
+        icon: ArrowLeftRight,
+      },
+      {
+        type: "link",
+        label: "+ Deposit",
+        href: "/deposit",
+        icon: Plus,
+      },
+      {
+        type: "link",
+        label: "Withdraw",
+        href: "/withdraw",
+        icon: CreditCard,
+      },
+      {
+        type: "link",
+        label: "Notifications",
+        href: "/notifications",
+        icon: Bell,
       },
     ],
   },
