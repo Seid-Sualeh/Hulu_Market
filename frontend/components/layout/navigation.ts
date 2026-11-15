@@ -131,8 +131,8 @@ export const navigationSections: {
       },
       {
         type: "link",
-        label: "Channels",
-        href: "/channels",
+        label: "My Market Place",
+        href: "/my-marketplace",
         icon: ListOrdered,
       },
       {
@@ -149,7 +149,7 @@ export const navigationSections: {
       },
       {
         type: "link",
-        label: "+ Deposit",
+        label: "Deposit",
         href: "/deposit",
         icon: Plus,
       },

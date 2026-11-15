@@ -79,30 +79,34 @@ export default function SocialMediaPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="relative flex items-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#121721] shadow-inner focus-within:border-cyan-500/50">
+      <div className="group relative flex min-h-12 items-center rounded-xl border border-white/[0.08] bg-[#121721] shadow-inner transition-colors focus-within:border-cyan-500/50 focus-within:ring-2 focus-within:ring-cyan-500/10">
+        <Search
+          aria-hidden="true"
+          size={18}
+          strokeWidth={2}
+          className="pointer-events-none absolute left-4 text-slate-500 transition-colors group-focus-within:text-cyan-400"
+        />
+        <label htmlFor="account-search" className="sr-only">
+          Search accounts
+        </label>
         <input
-          type="text"
+          id="account-search"
+          type="search"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search accounts..."
-          className="w-full bg-transparent px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none"
+          className="h-12 w-full min-w-0 bg-transparent py-3 pl-11 pr-12 text-sm text-white outline-none placeholder:text-slate-500"
         />
         {searchQuery && (
           <button
             type="button"
+            aria-label="Clear account search"
             onClick={() => setSearchQuery("")}
-            className="mr-2 text-slate-400 hover:text-white"
+            className="absolute right-3 grid size-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
           >
             <X size={16} />
           </button>
         )}
-        <button
-          type="button"
-          title="Search"
-          className="grid h-full px-5 place-items-center bg-blue-600 text-white transition hover:bg-blue-500"
-        >
-          <Search size={18} />
-        </button>
       </div>
 
       {/* Platform Selector */}
