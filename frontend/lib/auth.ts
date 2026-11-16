@@ -41,8 +41,8 @@ export function getAuthUser(): AuthUser | null {
 
 export function signInUser(
   email: string,
-  name = "Seid Sualih",
-  phone = "+251929075365",
+  name?: string,
+  phone?: string,
   token?: string,
   id?: number | string,
   balance?: number
@@ -51,8 +51,8 @@ export function signInUser(
   const user: AuthUser = {
     id,
     email,
-    name,
-    phone,
+    name: name || email.split("@")[0] || "User",
+    phone: phone || "",
     token,
     balance: balance ?? 0,
     signedIn: true,

@@ -12,12 +12,12 @@ function SignUpContent() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/social-media";
 
-  const [firstName, setFirstName] = useState("Seid");
-  const [lastName, setLastName] = useState("Sualih");
-  const [email, setEmail] = useState("sualehseid@gmail.com");
-  const [phone, setPhone] = useState("+251929075365");
-  const [password, setPassword] = useState("password123");
-  const [confirmPassword, setConfirmPassword] = useState("password123");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -146,7 +146,7 @@ function SignUpContent() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="sualehseid@gmail.com"
+              placeholder="Enter your email address"
               required
               className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500 font-medium"
             />

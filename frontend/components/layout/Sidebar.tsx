@@ -205,6 +205,10 @@ export function SidebarBrand() {
 }
 
 export function UserProfileFooter({ onNavigate }: { onNavigate?: () => void }) {
+  const { user } = useAuth();
+  const displayName = user?.name || user?.email?.split("@")[0] || "My Account";
+  const displayBalance = user?.balance ?? 0;
+
   return (
     <div className="border-t border-white/[0.08] p-3 pt-4 space-y-3">
       <Link
@@ -216,10 +220,10 @@ export function UserProfileFooter({ onNavigate }: { onNavigate?: () => void }) {
           <img src="/logo.png" alt="Profile" className="w-full h-full object-cover rounded-full" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-white truncate">Seid Sualih</p>
+          <p className="text-xs font-semibold text-white truncate">{displayName}</p>
           <p className="flex items-center gap-1 text-[11px] font-medium text-amber-400">
             <Coins size={12} className="text-amber-400" />
-            0 ETB
+            {displayBalance} ETB
           </p>
         </div>
       </Link>
@@ -261,7 +265,7 @@ export function SidebarNavigation({
   const pathname = usePathname() ?? "/";
   const { signedIn, mounted } = useAuth();
 
-  // In guest mode (without sign-in), only show Main section (Dashboard, Marketplace, Sell, Inbox)
+  // In guest mode (without sign-in), only show Main section ( Marketplace, Sell, Inbox)
   const visibleSections = mounted && signedIn
     ? navigationSections
     : navigationSections.filter((section) => section.label === "Main");

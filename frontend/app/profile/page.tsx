@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth";
 import {
   ArrowDownCircle,
   ArrowLeftRight,
@@ -33,10 +34,19 @@ export default function ProfilePage() {
   const [selectedLanguage, setSelectedLanguage] = useState("English");
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
-  // User info state
-  const [name, setName] = useState("Seid Sualih");
-  const [email, setEmail] = useState("sualehseid@gmail.com");
-  const [phone, setPhone] = useState("+251 91 234 5678");
+  // Authenticated user info
+  const { user } = useAuth();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name || "");
+      setEmail(user.email || "");
+      setPhone(user.phone || "");
+    }
+  }, [user]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-24">

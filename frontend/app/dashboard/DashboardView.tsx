@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useAuth } from "@/lib/auth";
 import {
   Activity,
   ArrowDownLeft,
@@ -15,6 +16,9 @@ import {
 } from "lucide-react";
 
 export default function DashboardView() {
+  const { user } = useAuth();
+  const displayName = user?.name || user?.email?.split("@")[0] || "User";
+
   const stats = [
     {
       title: "Total Balance",
@@ -59,7 +63,7 @@ export default function DashboardView() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-            Welcome back, <span className="text-amber-400">Seid Sualih</span>
+            Welcome back, <span className="text-amber-400">{displayName}</span>
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-400">
             Real-time account, activity &amp; financial analytics &bull; <span className="text-amber-300 font-medium">Everything You Need. One Marketplace.</span>

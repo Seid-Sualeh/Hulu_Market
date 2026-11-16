@@ -15,8 +15,8 @@ function SignInContent() {
     ? redirectParam
     : "/social-media";
 
-  const [email, setEmail] = useState("sualehseid@gmail.com");
-  const [password, setPassword] = useState("password123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -43,7 +43,7 @@ function SignInContent() {
 
       signInUser(
         data.user.email,
-        data.user.name || "Seid Sualih",
+        data.user.name || `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim() || data.user.email,
         data.user.phone || "",
         data.token,
         data.user.id,
@@ -103,7 +103,7 @@ function SignInContent() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="sualehseid@gmail.com"
+              placeholder="Enter your email address"
               required
               className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500 font-medium"
             />
