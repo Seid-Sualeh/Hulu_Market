@@ -12,6 +12,7 @@ export function getApiBaseUrl(): string {
 
 /**
  * Perform a fetch against the backend service.
+ * Automatically injects auth headers (x-user-role, x-user-id, Authorization) from localStorage.
  */
 export async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
   const baseUrl = getApiBaseUrl();
@@ -21,5 +22,30 @@ export async function fetchBackend(path: string, init?: RequestInit): Promise<Re
   const separator = baseUrl.endsWith("/") ? "" : "/";
   const url = `${baseUrl}${separator}${cleanPath}`;
   
-  return fetch(url, init);
+  const headers = new Headers(init?.headers);
+  if (typeof window !== "undefined") {
+    try {
+      const rawUser = localStorage.getItem("hulu_user");
+      if (rawUser) {
+        const u = JSON.parse(rawUser);
+        if (u?.role) {
+          headers.set("x-user-role", u.role);
+        }
+        if (u?.id) {
+          headers.set("x-user-id", String(u.id));
+        }
+      }
+      const token = localStorage.getItem("hulu_token");
+      if (token && !headers.has("Authorization")) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  return fetch(url, {
+    ...init,
+    headers,
+  });
 }

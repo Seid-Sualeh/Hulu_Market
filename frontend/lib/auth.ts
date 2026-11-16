@@ -11,6 +11,7 @@ export interface AuthUser {
   phone?: string;
   balance?: number;
   token?: string;
+  role?: string;
   signedIn: boolean;
 }
 
@@ -26,6 +27,11 @@ export function isUserSignedIn(): boolean {
   } catch {
     return false;
   }
+}
+
+export function isUserAdmin(): boolean {
+  const user = getAuthUser();
+  return Boolean(user && user.signedIn && user.role === "admin");
 }
 
 export function getAuthUser(): AuthUser | null {
@@ -45,7 +51,8 @@ export function signInUser(
   phone?: string,
   token?: string,
   id?: number | string,
-  balance?: number
+  balance?: number,
+  role = "user"
 ): void {
   if (typeof window === "undefined") return;
   const user: AuthUser = {
@@ -55,6 +62,7 @@ export function signInUser(
     phone: phone || "",
     token,
     balance: balance ?? 0,
+    role,
     signedIn: true,
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
@@ -68,6 +76,31 @@ export function signOutUser(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(AUTH_STORAGE_KEY);
   window.dispatchEvent(new Event("hulu_auth_state_changed"));
+}
+
+export async function refreshUser(): Promise<AuthUser | null> {
+  if (typeof window === "undefined") return null;
+  const current = getAuthUser();
+  if (!current || !current.id) return current;
+  try {
+    const res = await fetch(`/api/user/profile?userId=${current.id}`);
+    const data = await res.json();
+    if (data.success && data.user) {
+      const updated: AuthUser = {
+        ...current,
+        balance: Number(data.user.balance) || 0,
+        role: data.user.role || current.role,
+        name: `${data.user.first_name} ${data.user.last_name}`.trim() || current.name,
+        phone: data.user.phone || current.phone,
+      };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated));
+      window.dispatchEvent(new Event("hulu_auth_state_changed"));
+      return updated;
+    }
+  } catch {
+    // Ignore network error in background refresh
+  }
+  return current;
 }
 
 export function useAuth() {
@@ -85,6 +118,9 @@ export function useAuth() {
 
     syncState();
 
+    // Check remote balance on load if signed in
+    refreshUser();
+
     window.addEventListener("hulu_auth_state_changed", syncState);
     window.addEventListener("storage", syncState);
     return () => {
@@ -93,5 +129,5 @@ export function useAuth() {
     };
   }, []);
 
-  return { signedIn, user, mounted };
+  return { signedIn, user, mounted, refreshUser };
 }

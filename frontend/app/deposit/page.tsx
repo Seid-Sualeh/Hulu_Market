@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useAuth } from "@/lib/auth";
 import {
   AlertCircle,
   Building2,
@@ -33,16 +34,25 @@ interface PaymentMethod {
 }
 
 export default function DepositPage() {
+  const { user, refreshUser } = useAuth();
   const [selectedMethod, setSelectedMethod] =
     useState<PaymentMethod["id"]>("CBE");
-  const [depositorName, setDepositorName] = useState("Seid Sualih");
-  const [amount, setAmount] = useState("150");
+  const [depositorName, setDepositorName] = useState("");
+  const [amount, setAmount] = useState("");
   const [previewScreenshot, setPreviewScreenshot] = useState<string | null>(
     null,
   );
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Sync depositor name with logged in user
+  useEffect(() => {
+    if (user?.name && !depositorName) {
+      setDepositorName(user.name);
+    }
+  }, [user, depositorName]);
 
   // Exact 4 Deposit Methods with user's brand images & account numbers
   const paymentMethods: PaymentMethod[] = [
@@ -88,7 +98,7 @@ export default function DepositPage() {
     },
   ];
 
-  // Deposit history state
+  // Deposit history state (fetched from backend MySQL)
   const [depositHistory, setDepositHistory] = useState<
     {
       id: string;
@@ -101,6 +111,40 @@ export default function DepositPage() {
       time: string;
     }[]
   >([]);
+
+  const fetchTransactions = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/transactions/my?userId=${user.id}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.transactions)) {
+        const deposits = data.transactions
+          .filter((t: any) => t.type === "deposit")
+          .map((t: any) => {
+            const dateObj = new Date(t.created_at);
+            const matched = paymentMethods.find((p) => p.name === t.payment_method);
+            return {
+              id: t.reference_code || `DEP-${t.id}`,
+              amount: `${t.amount} ETB`,
+              method: t.payment_method,
+              accountNumber: t.account_number || "",
+              imageSrc: matched ? matched.imageSrc : "/CBE.jpg",
+              status: t.status,
+              date: dateObj.toLocaleDateString(),
+              time: dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            };
+          });
+        setDepositHistory(deposits);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+    refreshUser?.();
+  }, [user?.id]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -121,33 +165,43 @@ export default function DepositPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || Number(amount) <= 0) {
-      alert("Please enter a valid deposit amount.");
+    setSubmitError(null);
+
+    const numAmount = Number(amount);
+    if (!numAmount || numAmount <= 0) {
+      setSubmitError("Please enter a valid deposit amount.");
       return;
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/transactions/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user?.id,
+          amount: numAmount,
+          paymentMethod: currentMethod.name,
+          accountNumber: currentMethod.accountNumber,
+          accountName: depositorName,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setSubmittedSuccess(true);
+        fetchTransactions();
+        refreshUser?.();
+      } else {
+        setSubmitError(data.error || "Failed to submit deposit.");
+      }
+    } catch (err: any) {
+      setSubmitError(err.message || "Network error. Please try again.");
+    } finally {
       setIsSubmitting(false);
-      setSubmittedSuccess(true);
-
-      // Add to deposit history
-      const now = new Date();
-      const newEntry = {
-        id: `DEP-${Math.floor(1000 + Math.random() * 9000)}`,
-        amount: `${amount} ETB`,
-        method: currentMethod.name,
-        accountNumber: currentMethod.accountNumber,
-        imageSrc: currentMethod.imageSrc,
-        status: "pending" as const,
-        date: now.toLocaleDateString(),
-        time: now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      };
-
-      setDepositHistory((prev) => [newEntry, ...prev]);
-    }, 1200);
+    }
   };
 
   return (
@@ -173,13 +227,23 @@ export default function DepositPage() {
                 WALLET BALANCE
               </p>
               <p className="mt-1 font-serif text-2xl sm:text-3xl font-bold tracking-tight text-amber-300">
-                0 ETB
+                {user?.balance !== undefined ? user.balance.toLocaleString() : "0"} ETB
               </p>
             </div>
             <div className="grid size-12 place-items-center rounded-2xl border border-teal-500/30 bg-teal-500/10 text-teal-400 shadow-inner">
               <Wallet size={22} />
             </div>
           </div>
+
+          {/* Submission Error Banner */}
+          {submitError && (
+            <div className="rounded-2xl border border-rose-500/40 bg-rose-950/20 p-4 shadow-xl">
+              <div className="flex items-center gap-2 text-xs font-semibold text-rose-300">
+                <AlertCircle size={16} className="text-rose-400 shrink-0" />
+                <span>{submitError}</span>
+              </div>
+            </div>
+          )}
 
           {/* Submission Success Toast Banner */}
           {submittedSuccess && (

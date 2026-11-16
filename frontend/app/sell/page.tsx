@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useAuth } from "@/lib/auth";
 import {
   ArrowRight,
   BookOpen,
@@ -64,7 +65,14 @@ export default function SellPage() {
   const [itemTitle, setItemTitle] = useState("");
   const [itemCondition, setItemCondition] = useState("Brand New");
 
+  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (user?.phone && !phoneNumber) {
+      setPhoneNumber(user.phone);
+    }
+  }, [user, phoneNumber]);
 
   const marketplaceItems: {
     id: MarketplaceCategory;
@@ -260,17 +268,44 @@ export default function SellPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agreed) {
       alert("Please confirm seller permission agreement before proceeding.");
       return;
     }
+
+    const channelName = platformUsername.startsWith("@") ? platformUsername : `@${platformUsername}`;
+    const capitalizedPlatform = selectedPlatform.charAt(0).toUpperCase() + selectedPlatform.slice(1);
+
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sellerId: user?.id,
+          name: channelName || `${capitalizedPlatform} Channel`,
+          platform: capitalizedPlatform,
+          category: category || "General",
+          subscribers: followers || "0",
+          views_or_likes: "0",
+          price: Number(price),
+          link_url: channelLink,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setSubmitted(true);
+      } else {
+        alert(data.error || "Failed to submit channel listing.");
+      }
+    } catch {
+      alert("Network error. Please try again.");
+    } finally {
       setIsSubmitting(false);
-      setSubmitted(true);
-    }, 1200);
+    }
   };
 
   return (

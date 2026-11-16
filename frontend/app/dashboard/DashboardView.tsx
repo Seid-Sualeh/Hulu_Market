@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import {
@@ -10,47 +11,90 @@ import {
   Clock,
   DollarSign,
   Layers,
+  ShieldCheck,
   ShoppingBag,
   TrendingUp,
   XCircle,
 } from "lucide-react";
 
 export default function DashboardView() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const displayName = user?.name || user?.email?.split("@")[0] || "User";
+
+  const [statsData, setStatsData] = useState<{
+    balance: number;
+    lockedBalance: number;
+    income: number;
+    soldChannels: number;
+    totalChannels: number;
+    pendingChannels: number;
+    approvedDeposits: number;
+    pendingDeposits: number;
+    rejectedDeposits: number;
+    approvedWithdrawals: number;
+    pendingWithdrawals: number;
+    rejectedWithdrawals: number;
+  }>({
+    balance: user?.balance || 0,
+    lockedBalance: 0,
+    income: 0,
+    soldChannels: 0,
+    totalChannels: 0,
+    pendingChannels: 0,
+    approvedDeposits: 0,
+    pendingDeposits: 0,
+    rejectedDeposits: 0,
+    approvedWithdrawals: 0,
+    pendingWithdrawals: 0,
+    rejectedWithdrawals: 0,
+  });
+
+  useEffect(() => {
+    if (!user?.id) return;
+    refreshUser?.();
+
+    fetch(`/api/user/stats?userId=${user.id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.stats) {
+          setStatsData(data.stats);
+        }
+      })
+      .catch(() => {});
+  }, [user?.id]);
 
   const stats = [
     {
       title: "Total Balance",
-      value: "0 ETB",
+      value: `${(statsData.balance ?? user?.balance ?? 0).toLocaleString()} ETB`,
       icon: DollarSign,
       iconBg: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
       badge: "Live",
     },
     {
       title: "Income",
-      value: "0 ETB",
+      value: `${statsData.income.toLocaleString()} ETB`,
       icon: TrendingUp,
       iconBg: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
       badge: "Live",
     },
     {
       title: "Sold Channels",
-      value: "0",
+      value: String(statsData.soldChannels),
       icon: ShoppingBag,
       iconBg: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
       badge: "Live",
     },
     {
       title: "Total Channel",
-      value: "0",
+      value: String(statsData.totalChannels),
       icon: Activity,
       iconBg: "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20",
       badge: "Live",
     },
     {
       title: "Pending for sale",
-      value: "0",
+      value: String(statsData.pendingChannels),
       icon: Layers,
       iconBg: "bg-teal-500/10 text-teal-400 border border-teal-500/20",
       badge: "Live",
@@ -78,6 +122,24 @@ export default function DashboardView() {
           <span>Browse Channels</span>
         </Link>
       </div>
+
+      {/* Admin Notice Banner (RBAC distinction) */}
+      {user?.role === "admin" && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-200">
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck size={18} className="text-amber-400 shrink-0" />
+            <p>
+              You are signed in as an <strong>Administrator</strong>. This is your personal user account view. To review and approve all user requests (sells, deposits, withdrawals, escrow trades), open the Admin Control Center.
+            </p>
+          </div>
+          <Link
+            href="/admin"
+            className="rounded-xl bg-amber-400 px-4 py-2 font-bold text-slate-950 hover:bg-amber-300 transition shrink-0 shadow-md"
+          >
+            Open Admin Dashboard
+          </Link>
+        </div>
+      )}
 
       {/* Top 5 Metric Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -134,27 +196,35 @@ export default function DashboardView() {
                 <span>Approved Deposits</span>
                 <CheckCircle2 size={14} />
               </div>
-              <p className="mt-2 text-xl font-bold text-white">0 ETB</p>
+              <p className="mt-2 text-xl font-bold text-white">
+                {statsData.approvedDeposits.toLocaleString()} ETB
+              </p>
             </div>
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-amber-400">
                 <span>Processing (Pending)</span>
                 <Clock size={14} />
               </div>
-              <p className="mt-2 text-xl font-bold text-white">0 ETB</p>
+              <p className="mt-2 text-xl font-bold text-white">
+                {statsData.pendingDeposits.toLocaleString()} ETB
+              </p>
             </div>
             <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-rose-400">
                 <span>Rejected</span>
                 <XCircle size={14} />
               </div>
-              <p className="mt-2 text-xl font-bold text-white">0</p>
+              <p className="mt-2 text-xl font-bold text-white">
+                {statsData.rejectedDeposits}
+              </p>
             </div>
           </div>
 
-          <div className="mt-6 rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-slate-500">
-            No deposit activity in the last 30 days.
-          </div>
+          {statsData.approvedDeposits === 0 && statsData.pendingDeposits === 0 && (
+            <div className="mt-6 rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-slate-500">
+              No deposit activity in the last 30 days.
+            </div>
+          )}
         </div>
 
         {/* Withdrawal Analytics */}
@@ -182,27 +252,35 @@ export default function DashboardView() {
                 <span>Approved Withdrawals</span>
                 <CheckCircle2 size={14} />
               </div>
-              <p className="mt-2 text-xl font-bold text-white">0 ETB</p>
+              <p className="mt-2 text-xl font-bold text-white">
+                {statsData.approvedWithdrawals.toLocaleString()} ETB
+              </p>
             </div>
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-amber-400">
                 <span>Processing (In Progress)</span>
                 <Clock size={14} />
               </div>
-              <p className="mt-2 text-xl font-bold text-white">0 ETB</p>
+              <p className="mt-2 text-xl font-bold text-white">
+                {statsData.pendingWithdrawals.toLocaleString()} ETB
+              </p>
             </div>
             <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
               <div className="flex items-center justify-between text-xs font-medium text-rose-400">
                 <span>Rejected</span>
                 <XCircle size={14} />
               </div>
-              <p className="mt-2 text-xl font-bold text-white">0</p>
+              <p className="mt-2 text-xl font-bold text-white">
+                {statsData.rejectedWithdrawals}
+              </p>
             </div>
           </div>
 
-          <div className="mt-6 rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-slate-500">
-            No withdrawal activity in the last 30 days.
-          </div>
+          {statsData.approvedWithdrawals === 0 && statsData.pendingWithdrawals === 0 && (
+            <div className="mt-6 rounded-xl border border-dashed border-white/10 p-6 text-center text-xs text-slate-500">
+              No withdrawal activity in the last 30 days.
+            </div>
+          )}
         </div>
       </div>
     </div>

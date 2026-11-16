@@ -47,7 +47,8 @@ function SignInContent() {
         data.user.phone || "",
         data.token,
         data.user.id,
-        data.user.balance
+        data.user.balance,
+        data.user.role
       );
 
       router.push(redirect);

@@ -263,12 +263,26 @@ export function SidebarNavigation({
   idPrefix?: string;
 }) {
   const pathname = usePathname() ?? "/";
-  const { signedIn, mounted } = useAuth();
+  const { user, signedIn, mounted } = useAuth();
+  const isAdmin = Boolean(mounted && signedIn && user?.role === "admin");
 
-  // In guest mode (without sign-in), only show Main section ( Marketplace, Sell, Inbox)
-  const visibleSections = mounted && signedIn
-    ? navigationSections
-    : navigationSections.filter((section) => section.label === "Main");
+  // RBAC: In guest mode, only show Main section. Admin control link ONLY shown if role is admin.
+  const visibleSections = navigationSections
+    .filter((section) => {
+      if (!mounted || !signedIn) {
+        return section.label === "Main";
+      }
+      return true;
+    })
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (item.label === "Admin Control" || item.href === "/admin") {
+          return isAdmin;
+        }
+        return true;
+      }),
+    }));
 
   return (
     <>

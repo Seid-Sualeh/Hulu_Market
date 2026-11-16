@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useAuth } from "@/lib/auth";
 import {
   AlertCircle,
   ArrowDownLeft,
@@ -30,7 +32,6 @@ interface PaymentMethod {
   badgeBg?: string;
   badgeTextColor?: string;
   accountPlaceholder: string;
-  defaultAccount?: string;
 }
 
 interface WithdrawalRecord {
@@ -46,22 +47,30 @@ interface WithdrawalRecord {
 }
 
 export default function WithdrawPage() {
-  // Balance state (with Demo Balance Top-up toggle for testing)
-  const [availableBalance, setAvailableBalance] = useState<number>(0);
+  const { user, refreshUser } = useAuth();
+  const availableBalance = user?.balance ?? 0;
   const [selectedMethodId, setSelectedMethodId] =
     useState<PaymentMethod["id"]>("CBE");
-  const [amount, setAmount] = useState<string>("1500");
-  const [receiverName, setReceiverName] = useState<string>("seid Sualih");
-  const [accountNumber, setAccountNumber] = useState<string>("1000179861457");
+  const [amount, setAmount] = useState<string>("");
+  const [receiverName, setReceiverName] = useState<string>("");
+  const [accountNumber, setAccountNumber] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [successModalOpen, setSuccessModalOpen] = useState<boolean>(false);
   const [submittedRecord, setSubmittedRecord] =
     useState<WithdrawalRecord | null>(null);
 
+  // Sync receiver name with user
+  useEffect(() => {
+    if (user?.name && !receiverName) {
+      setReceiverName(user.name);
+    }
+  }, [user, receiverName]);
+
   // Withdrawal history list
   const [history, setHistory] = useState<WithdrawalRecord[]>([]);
 
-  // Payment methods: featuring official brand assets + additional Ethiopian banking options
+  // Payment methods
   const paymentMethods: PaymentMethod[] = [
     {
       id: "TELEBIRR",
@@ -70,7 +79,6 @@ export default function WithdrawPage() {
       feePercent: 8,
       imageSrc: "/TELEBIRR.jpg",
       accountPlaceholder: "09XXXXXXXX",
-      defaultAccount: "0929075365",
     },
     {
       id: "CBE",
@@ -79,7 +87,6 @@ export default function WithdrawPage() {
       feePercent: 7,
       imageSrc: "/CBE.jpg",
       accountPlaceholder: "1000XXXXXXXXX",
-      defaultAccount: "1000179861457",
     },
     {
       id: "BOA",
@@ -88,7 +95,6 @@ export default function WithdrawPage() {
       feePercent: 7,
       imageSrc: "/BOA.png",
       accountPlaceholder: "2480XXXXX",
-      defaultAccount: "248097574",
     },
     {
       id: "MPESA",
@@ -97,7 +103,6 @@ export default function WithdrawPage() {
       feePercent: 8,
       imageSrc: "/MPESA.jpg",
       accountPlaceholder: "07XXXXXXXX",
-      defaultAccount: "0722075365",
     },
     {
       id: "DASHEN",
@@ -119,6 +124,45 @@ export default function WithdrawPage() {
     },
   ];
 
+  const fetchWithdrawals = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/transactions/my?userId=${user.id}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.transactions)) {
+        const records: WithdrawalRecord[] = data.transactions
+          .filter((t: any) => t.type === "withdrawal")
+          .map((t: any) => {
+            const fee = (Number(t.amount) * 7) / 100;
+            return {
+              id: t.reference_code || `WTH-${t.id}`,
+              method: t.payment_method,
+              amount: Number(t.amount),
+              fee,
+              netAmount: Number(t.amount) - fee,
+              receiverName: t.account_name || user?.name || "User",
+              accountNumber: t.account_number || "",
+              status: t.status === "approved" ? "Completed" : t.status === "pending" ? "Pending" : "Processing",
+              date: new Date(t.created_at).toLocaleString("en-US", {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              }),
+            };
+          });
+        setHistory(records);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchWithdrawals();
+    refreshUser?.();
+  }, [user?.id]);
+
   const currentMethod =
     paymentMethods.find((m) => m.id === selectedMethodId) || paymentMethods[1];
 
@@ -129,48 +173,72 @@ export default function WithdrawPage() {
 
   const handleSelectMethod = (method: PaymentMethod) => {
     setSelectedMethodId(method.id);
-    if (method.defaultAccount) {
-      setAccountNumber(method.defaultAccount);
-    }
   };
 
-  const handleAddDemoBalance = (added: number) => {
-    setAvailableBalance((prev) => prev + added);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (numericAmount <= 0) return;
+    setSubmitError(null);
+
+    if (numericAmount <= 0) {
+      setSubmitError("Please enter a valid withdrawal amount.");
+      return;
+    }
 
     if (exceedsBalance) {
+      setSubmitError("Withdrawal amount exceeds your available balance.");
+      return;
+    }
+
+    if (!accountNumber) {
+      setSubmitError("Please enter your account number.");
       return;
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      const newRecord: WithdrawalRecord = {
-        id: `WTH-${Date.now().toString().slice(-6)}`,
-        method: currentMethod.name,
-        amount: numericAmount,
-        fee: feeAmount,
-        netAmount: receiveAmount,
-        receiverName: receiverName || "Seid Sualih",
-        accountNumber: accountNumber,
-        status: "Processing",
-        date: new Date().toLocaleString("en-US", {
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
+    try {
+      const res = await fetch("/api/transactions/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user?.id,
+          amount: numericAmount,
+          paymentMethod: currentMethod.name,
+          accountNumber,
+          accountName: receiverName,
         }),
-      };
+      });
 
-      setHistory((prev) => [newRecord, ...prev]);
-      setAvailableBalance((prev) => Math.max(0, prev - numericAmount));
-      setSubmittedRecord(newRecord);
+      const data = await res.json();
+      if (data.success) {
+        const newRecord: WithdrawalRecord = {
+          id: data.referenceCode || `WTH-${Date.now().toString().slice(-6)}`,
+          method: currentMethod.name,
+          amount: numericAmount,
+          fee: feeAmount,
+          netAmount: receiveAmount,
+          receiverName: receiverName || user?.name || "User",
+          accountNumber: accountNumber,
+          status: "Pending",
+          date: new Date().toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        };
+
+        setSubmittedRecord(newRecord);
+        setSuccessModalOpen(true);
+        fetchWithdrawals();
+        refreshUser?.();
+      } else {
+        setSubmitError(data.error || "Failed to submit withdrawal request.");
+      }
+    } catch (err: any) {
+      setSubmitError(err.message || "Network error. Please try again.");
+    } finally {
       setIsSubmitting(false);
-      setSuccessModalOpen(true);
-    }, 800);
+    }
   };
 
   return (
@@ -201,14 +269,13 @@ export default function WithdrawPage() {
                     {availableBalance.toLocaleString()} ETB
                   </span>
                   {availableBalance === 0 && (
-                    <button
-                      type="button"
-                      onClick={() => handleAddDemoBalance(2000)}
+                    <Link
+                      href="/deposit"
                       className="text-xs text-amber-400 hover:text-amber-300 underline ml-2 transition-colors flex items-center gap-1"
-                      title="Add test funds to test withdrawal flow"
+                      title="Deposit funds to your wallet"
                     >
-                      <Sparkles className="w-3 h-3" /> Top-up Demo ETB
-                    </button>
+                      <Sparkles className="w-3 h-3" /> Deposit ETB
+                    </Link>
                   )}
                 </div>
               </div>
@@ -218,6 +285,14 @@ export default function WithdrawPage() {
                 <DollarSign className="w-5 h-5" />
               </div>
             </div>
+
+            {/* Error banner */}
+            {submitError && (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-950/20 p-4 shadow-sm flex items-center gap-2 text-xs text-rose-300">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{submitError}</span>
+              </div>
+            )}
 
             {/* 2. PAYMENT METHOD CARD */}
             <div className="bg-[#111722]/90 border border-slate-800/80 rounded-xl p-5 shadow-sm">

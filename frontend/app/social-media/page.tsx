@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Coins, Filter, Search, X, Zap } from "lucide-react";
 import PlatformFilter from "@/components/social-media/PlatformFilter";
@@ -8,20 +8,46 @@ import ChannelCard from "@/components/social-media/ChannelCard";
 import PromoBanner from "@/components/social-media/PromoBanner";
 import { initialChannels } from "@/components/social-media/mockData";
 import { ChannelItem, PlatformType } from "@/components/social-media/types";
-import { isUserSignedIn } from "@/lib/auth";
+import { isUserSignedIn, useAuth } from "@/lib/auth";
 
 export default function SocialMediaPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [platform, setPlatform] = useState<PlatformType>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedChannel, setSelectedChannel] = useState<ChannelItem | null>(
     null,
   );
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+  const [dbChannels, setDbChannels] = useState<ChannelItem[]>([]);
+
+  useEffect(() => {
+    fetch("/api/channels")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.channels)) {
+          const mapped: ChannelItem[] = data.channels.map((c: any) => ({
+            id: `db-${c.id}`,
+            name: c.name,
+            platform: (c.platform || "telegram").toLowerCase() as PlatformType,
+            category: c.category || "General",
+            followers: c.subscribers || "0",
+            engagement: c.views_or_likes || "Active",
+            price: `${Number(c.price).toLocaleString()} ETB`,
+            linkText: c.name,
+            linkUrl: c.link_url || "#",
+            featured: false,
+          }));
+          setDbChannels(mapped);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Filter channels based on search query and selected platform
   const filteredChannels = useMemo(() => {
-    return initialChannels.filter((ch) => {
+    const combined = [...dbChannels, ...initialChannels];
+    return combined.filter((ch) => {
       const matchesPlatform =
         platform === "all" || ch.platform === platform;
       const matchesSearch =
@@ -32,24 +58,48 @@ export default function SocialMediaPage() {
 
       return matchesPlatform && matchesSearch;
     });
-  }, [platform, searchQuery]);
+  }, [platform, searchQuery, dbChannels]);
 
   const firstBatch = filteredChannels.slice(0, 2);
   const secondBatch = filteredChannels.slice(2);
 
-  const handleBuy = (channel: ChannelItem) => {
+  const handleBuy = async (channel: ChannelItem) => {
     // If user is not signed in, redirect to auth page
     if (!isUserSignedIn()) {
       router.push(`/auth?redirect=${encodeURIComponent("/social-media")}`);
       return;
     }
 
-    setPurchaseSuccess(
-      `Purchase initiated for "${channel.name}" (${channel.price}). Escrow transaction pending.`,
-    );
-    setTimeout(() => {
-      setPurchaseSuccess(null);
-    }, 4500);
+    try {
+      const priceNum = parseFloat(channel.price.replace(/[^0-9.]/g, "")) || 0;
+      const res = await fetch("/api/escrow/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channelName: channel.name,
+          platform: channel.platform,
+          price: priceNum,
+          buyerId: user?.id,
+          buyerName: user?.name || user?.email,
+          sellerId: 1,
+          sellerName: "Verified Seller",
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setPurchaseSuccess(
+          `Escrow trade #${data.orderId} created for "${channel.name}"! Open your Inbox to chat with seller and admin.`
+        );
+        setTimeout(() => {
+          setPurchaseSuccess(null);
+        }, 6000);
+      } else {
+        alert(data.error || "Failed to initiate escrow trade.");
+      }
+    } catch {
+      alert("Network error. Please try again.");
+    }
   };
 
   return (

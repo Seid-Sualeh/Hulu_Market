@@ -52,6 +52,12 @@ export const navigationSections: {
         icon: LayoutDashboard,
       },
       {
+        type: "link",
+        label: "Admin Control",
+        href: "/admin",
+        icon: ShieldCheck,
+      },
+      {
         type: "group",
         label: "Marketplace",
         icon: ShoppingBag,

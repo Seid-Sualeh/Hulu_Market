@@ -3,6 +3,11 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { authRouter } from "./routes/auth.js";
+import { adminRouter } from "./routes/admin.js";
+import { transactionsRouter } from "./routes/transactions.js";
+import { channelsRouter } from "./routes/channels.js";
+import { userRouter } from "./routes/user.js";
+import { escrowRouter } from "./routes/escrow.js";
 
 export function createApp(frontendOrigin?: string) {
   const app = express();
@@ -35,6 +40,26 @@ export function createApp(frontendOrigin?: string) {
   // Mount Auth routes (supported both with and without /api prefix)
   app.use("/auth", authRouter);
   app.use("/api/auth", authRouter);
+
+  // Mount Admin routes
+  app.use("/admin", adminRouter);
+  app.use("/api/admin", adminRouter);
+
+  // Mount Transactions routes (Deposits, Withdrawals, History)
+  app.use("/transactions", transactionsRouter);
+  app.use("/api/transactions", transactionsRouter);
+
+  // Mount Channels routes
+  app.use("/channels", channelsRouter);
+  app.use("/api/channels", channelsRouter);
+
+  // Mount User stats & profile routes
+  app.use("/user", userRouter);
+  app.use("/api/user", userRouter);
+
+  // Mount Escrow routes (P2P orders, buyer-seller chat supervised by admin)
+  app.use("/escrow", escrowRouter);
+  app.use("/api/escrow", escrowRouter);
 
   return app;
 }
