@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import DashboardView from "./dashboard/DashboardView";
-import SocialMediaPage from "./social-media/page";
+import AuthPage from "./auth/page";
 
 export default function RootPage() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function RootPage() {
 
   useEffect(() => {
     if (mounted && !signedIn) {
-      router.replace("/social-media");
+      router.replace("/auth");
     }
   }, [mounted, signedIn, router]);
 
@@ -20,9 +20,9 @@ export default function RootPage() {
     return <div className="min-h-screen bg-[#0b0f17]" />;
   }
 
-  // Without sign-in, Dashboard MUST NOT DISPLAY - render marketplace matching reference image
+  // Without sign-in, the first page displayed MUST BE the Auth Page
   if (!signedIn) {
-    return <SocialMediaPage />;
+    return <AuthPage />;
   }
 
   // Only logged in users see the private dashboard
