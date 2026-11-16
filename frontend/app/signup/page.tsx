@@ -39,13 +39,18 @@ function SignUpContent() {
   return (
     <div className="min-h-screen bg-[#0b0f17] flex flex-col items-center justify-center p-4 relative select-none">
       <div className="max-w-md w-full flex flex-col items-center space-y-6 relative z-10 animate-in fade-in zoom-in-95 duration-200">
+        {/* Top Hulu Market Logo Badge */}
+        <div className="w-14 h-14 rounded-2xl border border-[#d4af37]/60 bg-[#141b27]/90 overflow-hidden p-1 shadow-lg shadow-amber-500/15 mb-1">
+          <img src="/logo.png" alt="Hulu Market" className="w-full h-full object-cover rounded-xl" />
+        </div>
+
         {/* Heading matching signup-page.png */}
         <div className="text-center space-y-1">
           <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-wider">
             REGISTER
           </h1>
-          <p className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">
-            SELECT A LOG-IN OPTION BELOW OR CREATE A SECURE ACCOUNT.
+          <p className="text-xs text-amber-300/80 font-medium">
+            Everything You Need. One Marketplace.
           </p>
         </div>
 

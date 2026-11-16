@@ -1,5 +1,5 @@
-const CACHE_NAME = "hulu-market-cache-v1";
-const STATIC_ASSETS = ["/", "/manifest.json", "/auth-page.png"];
+const CACHE_NAME = "hulu-market-cache-v2";
+const STATIC_ASSETS = ["/", "/manifest.json", "/logo.png", "/auth-page.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

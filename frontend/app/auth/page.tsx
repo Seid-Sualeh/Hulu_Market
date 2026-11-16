@@ -25,18 +25,18 @@ function AuthLanding() {
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
 
       <div className="max-w-md w-full flex flex-col items-center text-center space-y-6 relative z-10 animate-in fade-in zoom-in-95 duration-200">
-        {/* Gold circular icon badge matching auth-page.png */}
-        <div className="w-20 h-20 rounded-full border border-[#d4af37]/60 bg-[#141b27]/90 flex items-center justify-center text-[#d4af37] shadow-xl shadow-amber-500/10 mb-1">
-          <ShoppingBag className="w-9 h-9 stroke-[1.8]" />
+        {/* Brand Logo badge */}
+        <div className="w-24 h-24 rounded-full border-2 border-[#d4af37]/80 bg-[#141b27]/90 flex items-center justify-center p-1 shadow-2xl shadow-amber-500/20 mb-1 overflow-hidden">
+          <img src="/logo.png" alt="Hulu Market Logo" className="w-full h-full object-cover rounded-full" />
         </div>
 
-        {/* Brand Name */}
+        {/* Brand Name & Slogan */}
         <div className="space-y-2">
           <h1 className="text-3xl md:text-4xl font-extrabold text-[#d4af37] tracking-wide">
             Hulu Market
           </h1>
-          <p className="text-xs md:text-sm text-slate-400 max-w-xs mx-auto leading-relaxed">
-            Your marketplace for listings, wallet, and secure trades.
+          <p className="text-sm md:text-base font-medium text-amber-200/90 max-w-xs mx-auto leading-relaxed">
+            Everything You Need. One Marketplace.
           </p>
         </div>
 

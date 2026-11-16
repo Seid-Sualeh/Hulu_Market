@@ -1,7 +1,7 @@
 {
-  "name": "Hulu Market - Digital & Physical Marketplace",
+  "name": "Hulu Market - Everything You Need. One Marketplace.",
   "short_name": "Hulu Market",
-  "description": "Ethiopia's premier digital and physical marketplace for channels, accounts, and products",
+  "description": "Everything You Need. One Marketplace.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
@@ -9,13 +9,13 @@
   "theme_color": "#0d9488",
   "icons": [
     {
-      "src": "/auth-page.png",
+      "src": "/logo.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/auth-page.png",
+      "src": "/logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

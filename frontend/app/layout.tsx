@@ -4,8 +4,8 @@ import PwaRegister from "../components/PwaRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hulu Market - Social Media Channels & Marketplace",
-  description: "Hulu Market - Ethiopia's premier digital & physical marketplace",
+  title: "Hulu Market - Everything You Need. One Marketplace.",
+  description: "Everything You Need. One Marketplace.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -13,7 +13,9 @@ export const metadata: Metadata = {
     title: "Hulu Market",
   },
   icons: {
-    apple: "/auth-page.png",
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
   },
 };
 
@@ -32,7 +34,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="apple-touch-icon" href="/auth-page.png" />
+        <link rel="icon" href="/logo.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
       </head>
       <body className="min-h-screen bg-[#0b0f14] text-slate-100 antialiased selection:bg-teal-500 selection:text-black">
         <PwaRegister />

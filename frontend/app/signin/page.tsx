@@ -32,9 +32,9 @@ function SignInContent() {
   return (
     <div className="min-h-screen bg-[#0b0f17] flex flex-col items-center justify-center p-4 relative select-none">
       <div className="max-w-md w-full flex flex-col items-center space-y-6 relative z-10 animate-in fade-in zoom-in-95 duration-200">
-        {/* Top Gold Shopping Bag Rounded Badge matching signin-page.png */}
-        <div className="w-12 h-12 rounded-xl border border-[#d4af37]/60 bg-[#141b27]/90 flex items-center justify-center text-[#d4af37] shadow-lg shadow-amber-500/10 mb-1">
-          <ShoppingBag className="w-6 h-6 stroke-[1.8]" />
+        {/* Top Hulu Market Logo Badge */}
+        <div className="w-14 h-14 rounded-2xl border border-[#d4af37]/60 bg-[#141b27]/90 overflow-hidden p-1 shadow-lg shadow-amber-500/15 mb-1">
+          <img src="/logo.png" alt="Hulu Market" className="w-full h-full object-cover rounded-xl" />
         </div>
 
         {/* Heading */}
@@ -42,8 +42,8 @@ function SignInContent() {
           <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-wider">
             SIGN IN
           </h1>
-          <p className="text-xs md:text-sm text-slate-400">
-            Welcome back to Hulu Market
+          <p className="text-xs md:text-sm text-amber-300/80 font-medium">
+            Everything You Need. One Marketplace.
           </p>
         </div>
 

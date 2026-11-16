@@ -186,14 +186,17 @@ export function SidebarBrand() {
     <Link
       href="/"
       aria-label="Hulu Market home"
-      className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+      className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-amber-300 group"
     >
-      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 text-slate-950 shadow-md shadow-amber-950/40">
-        <BrandIcon aria-hidden="true" size={19} strokeWidth={2.4} />
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl overflow-hidden bg-slate-900 border border-amber-500/40 shadow-md shadow-amber-950/40 p-0.5">
+        <img src="/logo.png" alt="Hulu Market Logo" className="w-full h-full object-cover rounded-lg" />
       </span>
       <span className="leading-tight">
-        <span className="block font-serif text-[17px] font-semibold tracking-wide text-amber-200">
+        <span className="block font-serif text-[17px] font-semibold tracking-wide text-amber-200 group-hover:text-amber-100 transition-colors">
           Hulu <span className="text-amber-400">Market</span>
+        </span>
+        <span className="block text-[9px] text-slate-400 font-sans tracking-tight">
+          Everything You Need. One Marketplace.
         </span>
       </span>
     </Link>
@@ -203,9 +206,13 @@ export function SidebarBrand() {
 export function UserProfileFooter({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="border-t border-white/[0.08] p-3 pt-4 space-y-3">
-      <div className="flex items-center gap-3 px-2 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-        <div className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-800 border border-teal-500/40 text-teal-300">
-          <User size={18} />
+      <Link
+        href="/profile"
+        onClick={onNavigate}
+        className="flex items-center gap-3 px-2 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.06] hover:border-amber-500/30 transition-all block"
+      >
+        <div className="grid size-9 shrink-0 place-items-center rounded-full overflow-hidden bg-slate-800 border border-amber-500/40 p-0.5">
+          <img src="/logo.png" alt="Profile" className="w-full h-full object-cover rounded-full" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-white truncate">Seid Sualih</p>
@@ -214,7 +221,7 @@ export function UserProfileFooter({ onNavigate }: { onNavigate?: () => void }) {
             0 ETB
           </p>
         </div>
-      </div>
+      </Link>
       <Link
         href="/logout"
         onClick={onNavigate}

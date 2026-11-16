@@ -137,11 +137,9 @@ export default function InboxPage() {
       >
         <div className="flex items-center gap-3.5">
           {/* Avatar with logo */}
-          <div className="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-amber-400 to-teal-400 p-0.5 shadow-md">
-            <div className="grid size-full place-items-center rounded-full bg-[#0c1017] text-white">
-              <span className="font-serif text-xs font-bold text-amber-300">
-                HM
-              </span>
+          <div className="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-amber-400 to-teal-400 p-0.5 shadow-md overflow-hidden">
+            <div className="grid size-full place-items-center rounded-full overflow-hidden bg-[#0c1017]">
+              <img src="/logo.png" alt="Hulu Market" className="w-full h-full object-cover" />
             </div>
           </div>
 
@@ -308,9 +306,9 @@ export default function InboxPage() {
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#0c1017] p-4">
               <div className="flex items-center gap-3">
-                <div className="grid size-9 place-items-center rounded-full bg-gradient-to-tr from-amber-400 to-teal-400 p-0.5">
-                  <div className="grid size-full place-items-center rounded-full bg-[#0c1017] font-serif text-[11px] font-bold text-amber-300">
-                    HM
+                <div className="grid size-9 place-items-center rounded-full overflow-hidden bg-gradient-to-tr from-amber-400 to-teal-400 p-0.5">
+                  <div className="grid size-full place-items-center rounded-full overflow-hidden bg-[#0c1017]">
+                    <img src="/logo.png" alt="HM" className="w-full h-full object-cover" />
                   </div>
                 </div>
                 <div>

@@ -46,13 +46,11 @@ export default function ProfilePage() {
         <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-400/40 via-teal-400/60 to-cyan-500/40" />
 
         <div className="flex flex-col items-center text-center">
-          {/* Avatar with mint/teal gradient & ambient glow */}
+          {/* Avatar with Hulu Market logo & ambient glow */}
           <div className="relative mt-2">
             <div className="pointer-events-none absolute inset-0 rounded-full bg-teal-400/20 blur-xl" />
-            <div className="relative grid size-24 place-items-center rounded-full bg-gradient-to-tr from-[#7FE5D9] to-[#C9F3A4] shadow-lg shadow-teal-950/50 ring-4 ring-white/10">
-              <span className="font-extrabold tracking-tight text-slate-950 text-2xl font-sans">
-                SS
-              </span>
+            <div className="relative grid size-24 place-items-center rounded-full overflow-hidden bg-slate-900 shadow-xl shadow-teal-950/50 ring-4 ring-amber-400/50">
+              <img src="/logo.png" alt="Profile" className="w-full h-full object-cover" />
             </div>
           </div>
 
@@ -61,6 +59,9 @@ export default function ProfilePage() {
             {name}
           </h1>
           <p className="mt-0.5 text-xs text-slate-400">{email}</p>
+          <p className="mt-1 text-xs text-amber-300/90 font-medium tracking-wide">
+            Everything You Need. One Marketplace.
+          </p>
 
           {/* Two Balance Mini-Pills */}
           <div className="mt-6 grid w-full grid-cols-2 gap-3">

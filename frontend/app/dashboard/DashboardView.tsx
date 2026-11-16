@@ -62,7 +62,7 @@ export default function DashboardView() {
             Welcome back, <span className="text-amber-400">Seid Sualih</span>
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-400">
-            Real-time account, activity &amp; financial analytics
+            Real-time account, activity &amp; financial analytics &bull; <span className="text-amber-300 font-medium">Everything You Need. One Marketplace.</span>
           </p>
         </div>
 

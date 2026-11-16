@@ -42,6 +42,14 @@ export default function Header() {
               <Coins size={14} className="text-amber-400" />
               <span>0 ETB</span>
             </div>
+
+            <Link
+              href="/profile"
+              title="View Profile"
+              className="grid size-9 place-items-center rounded-full overflow-hidden border border-amber-400/60 p-0.5 hover:ring-2 hover:ring-amber-400/50 transition"
+            >
+              <img src="/logo.png" alt="Profile" className="w-full h-full object-cover rounded-full" />
+            </Link>
           </>
         )}
       </div>
