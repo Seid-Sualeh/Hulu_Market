@@ -1,15 +1,15 @@
 import "dotenv/config";
-import { z } from "zod";
 import { createApp } from "./app.js";
 
-const environmentSchema = z.object({
-  PORT: z.coerce.number().int().min(1).max(65535).default(4001),
-  FRONTEND_ORIGIN: z.string().url().default("http://localhost:3000"),
-});
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 4001;
+const frontendOrigin = process.env.FRONTEND_ORIGIN;
 
-const environment = environmentSchema.parse(process.env);
-const app = createApp(environment.FRONTEND_ORIGIN);
+const app = createApp(frontendOrigin);
 
-app.listen(environment.PORT, () => {
-  console.log(`Backend listening on http://localhost:${environment.PORT}`);
-});
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Backend listening on port ${port}`);
+  });
+}
+
+export default app;
