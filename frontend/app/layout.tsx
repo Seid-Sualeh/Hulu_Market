@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import AppLayout from "../components/layout/AppLayout";
 import PwaRegister from "../components/PwaRegister";
+import PwaInstallBanner from "../components/pwa/PwaInstallBanner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -40,6 +41,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-[#0b0f14] text-slate-100 antialiased selection:bg-teal-500 selection:text-black">
         <PwaRegister />
         <AppLayout>{children}</AppLayout>
+        <PwaInstallBanner />
       </body>
     </html>
   );

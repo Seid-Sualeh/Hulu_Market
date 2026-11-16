@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShoppingBag } from "lucide-react";
 import { Suspense } from "react";
+import PwaInstallButton from "@/components/pwa/PwaInstallButton";
 
 function AuthLanding() {
   const router = useRouter();
@@ -57,6 +58,9 @@ function AuthLanding() {
           >
             Create Account
           </Link>
+
+          {/* Colored PWA Install Button */}
+          <PwaInstallButton variant="auth" />
         </div>
 
         {/* Continue as Guest Link - Guaranteed direct navigation to Marketplace */}

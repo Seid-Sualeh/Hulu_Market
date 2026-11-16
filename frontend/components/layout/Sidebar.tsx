@@ -17,6 +17,7 @@ import {
   type NavigationLink,
 } from "./navigation";
 import { useAuth } from "@/lib/auth";
+import PwaInstallButton from "../pwa/PwaInstallButton";
 
 function isCurrentPath(pathname: string, href: string) {
   return href === "/"
@@ -293,6 +294,9 @@ export function SidebarNavigation({
           </section>
         ))}
       </nav>
+
+      {/* PWA Install Action Card in Sidebar */}
+      <PwaInstallButton variant="sidebar" />
 
       {/* Conditionally render Guest Sign In button or User Profile Footer */}
       {mounted && signedIn ? (

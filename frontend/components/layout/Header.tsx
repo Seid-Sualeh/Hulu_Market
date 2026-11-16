@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Bell, Coins, Send } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import PwaInstallButton from "../pwa/PwaInstallButton";
 
 export default function Header() {
   const { signedIn, mounted } = useAuth();
@@ -14,7 +15,10 @@ export default function Header() {
         <div className="w-9 lg:hidden" />
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* PWA Install Button (colored, visible until installed) */}
+        <PwaInstallButton variant="header" />
+
         {/* Telegram quick action - always visible */}
         <a
           href="https://t.me"
