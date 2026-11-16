@@ -2,6 +2,7 @@ import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+import { authRouter } from "./routes/auth.js";
 
 export function createApp(frontendOrigin?: string) {
   const app = express();
@@ -30,6 +31,10 @@ export function createApp(frontendOrigin?: string) {
   // Support both /health and /api/health for internal bindings and public rewrites
   app.get("/health", healthCheck);
   app.get("/api/health", healthCheck);
+
+  // Mount Auth routes (supported both with and without /api prefix)
+  app.use("/auth", authRouter);
+  app.use("/api/auth", authRouter);
 
   return app;
 }

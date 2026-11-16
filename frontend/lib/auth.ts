@@ -3,9 +3,14 @@
 import { useEffect, useState } from "react";
 
 export interface AuthUser {
+  id?: number | string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   phone?: string;
+  balance?: number;
+  token?: string;
   signedIn: boolean;
 }
 
@@ -34,15 +39,28 @@ export function getAuthUser(): AuthUser | null {
   }
 }
 
-export function signInUser(email: string, name = "Seid Sualih", phone = "+251929075365"): void {
+export function signInUser(
+  email: string,
+  name = "Seid Sualih",
+  phone = "+251929075365",
+  token?: string,
+  id?: number | string,
+  balance?: number
+): void {
   if (typeof window === "undefined") return;
   const user: AuthUser = {
+    id,
     email,
     name,
     phone,
+    token,
+    balance: balance ?? 0,
     signedIn: true,
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+  if (token) {
+    localStorage.setItem("hulu_token", token);
+  }
   window.dispatchEvent(new Event("hulu_auth_state_changed"));
 }
 

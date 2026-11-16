@@ -3,8 +3,9 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Compass, Eye, EyeOff, Lock, Mail, ShoppingBag } from "lucide-react";
+import { AlertCircle, Compass, Eye, EyeOff, Lock, Mail, X } from "lucide-react";
 import { signInUser } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 
 function SignInContent() {
   const router = useRouter();
@@ -18,15 +19,44 @@ function SignInContent() {
   const [password, setPassword] = useState("password123");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
     setLoading(true);
-    setTimeout(() => {
-      signInUser(email, "Seid Sualih");
-      setLoading(false);
+
+    try {
+      const response = await fetchBackend("auth/signin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || "Invalid email or password");
+      }
+
+      signInUser(
+        data.user.email,
+        data.user.name || "Seid Sualih",
+        data.user.phone || "",
+        data.token,
+        data.user.id,
+        data.user.balance
+      );
+
       router.push(redirect);
-    }, 400);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to sign in";
+      setErrorMessage(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -46,6 +76,21 @@ function SignInContent() {
             Everything You Need. One Marketplace.
           </p>
         </div>
+
+        {/* Error Notification Banner */}
+        {errorMessage && (
+          <div className="w-full flex items-start gap-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs text-rose-300 shadow-sm animate-in fade-in duration-150">
+            <AlertCircle size={16} className="text-rose-400 shrink-0 mt-0.5" />
+            <p className="flex-1 leading-snug">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-rose-400 hover:text-white transition"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         {/* Form Container */}
         <form onSubmit={handleSubmit} className="w-full space-y-3.5">

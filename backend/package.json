@@ -11,16 +11,21 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "latest",
     "dotenv": "latest",
     "express": "latest",
     "express-rate-limit": "latest",
     "helmet": "latest",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.24.6",
     "zod": "latest"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "latest",
     "@types/express": "latest",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "latest",
     "eslint": "latest",
     "tsx": "latest",
