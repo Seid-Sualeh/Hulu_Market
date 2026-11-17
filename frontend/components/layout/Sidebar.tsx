@@ -277,7 +277,7 @@ export function SidebarNavigation({
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
-        if (item.label === "Admin Control" || item.href === "/admin") {
+        if (item.label === "Admin Control" || (item.type === "link" && item.href === "/admin")) {
           return isAdmin;
         }
         return true;

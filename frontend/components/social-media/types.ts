@@ -14,13 +14,19 @@ export interface ChannelItem {
   isNew?: boolean;
   linkText: string;
   linkUrl: string;
-  badgeTag: string;
+  badgeTag?: string;
   followers: string;
   followersLabel?: "Followers" | "Subscribers";
-  secondaryStat: string;
-  status: "ACTIVE" | "ONGOING";
+  secondaryStat?: string;
+  engagement?: string;
+  status?: "ACTIVE" | "ONGOING";
   price: string;
   rawPrice: number;
   avatarBg?: string;
   initials?: string;
+  featured?: boolean;
+  /** DB-sourced fields */
+  dbId?: number;
+  sellerId?: number | null;
+  sellerName?: string;
 }

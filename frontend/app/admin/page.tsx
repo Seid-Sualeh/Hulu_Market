@@ -89,6 +89,7 @@ interface TransactionRecord {
   account_number?: string;
   account_name?: string;
   reference_code?: string;
+  screenshot_url?: string;
   status: "pending" | "approved" | "rejected" | "completed";
   admin_notes?: string;
   created_at: string;
@@ -105,6 +106,10 @@ interface EscrowOrderRecord {
   seller_name?: string;
   amount: number;
   status: "processing" | "success" | "cancelled";
+  buyer_confirmed?: boolean;
+  seller_confirmed?: boolean;
+  is_closed?: boolean;
+  closed_at?: string;
   created_at: string;
 }
 
@@ -115,6 +120,8 @@ interface EscrowMessageRecord {
   sender_name: string;
   sender_role: "buyer" | "seller" | "admin";
   message: string;
+  message_type?: "text" | "voice" | "image";
+  attachment_url?: string;
   created_at: string;
 }
 
@@ -206,7 +213,14 @@ export default function AdminDashboardPage() {
       if (escrowRes.ok) {
         const escrowData = await escrowRes.json();
         if (escrowData.success && Array.isArray(escrowData.orders)) {
-          setEscrowOrders(escrowData.orders);
+          setEscrowOrders(
+            escrowData.orders.map((o: any) => ({
+              ...o,
+              buyer_confirmed: !!o.buyer_confirmed,
+              seller_confirmed: !!o.seller_confirmed,
+              is_closed: !!o.is_closed,
+            }))
+          );
         }
       }
     } catch (err: unknown) {
@@ -261,6 +275,7 @@ export default function AdminDashboardPage() {
           senderName: "Hulu Admin",
           senderRole: "admin",
           message: text,
+          messageType: "text",
         }),
       });
       const data = await res.json();
@@ -269,6 +284,51 @@ export default function AdminDashboardPage() {
       }
     } catch {
       alert("Failed to send administrative message.");
+    }
+  };
+
+  const handleRequestBuyerConfirmation = async (orderId: number) => {
+    try {
+      const res = await fetchBackend(`escrow/orders/${orderId}/request-confirmation`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({
+          type: "success",
+          text: "Confirmation instruction sent to buyer!",
+        });
+        if (data.instructionMessage) {
+          setEscrowChatMessages((prev) => [...prev, data.instructionMessage]);
+        }
+        loadAdminData();
+      } else {
+        setFeedback({
+          type: "error",
+          text: data.error || "Failed to send confirmation instruction.",
+        });
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Network error sending confirmation instruction." });
+    }
+  };
+
+  const handleCloseTrade = async (orderId: number) => {
+    if (!confirm(`Finalize and close Trade #${orderId}? This will lock the conversation and release funds to the seller.`)) return;
+    try {
+      const res = await fetchBackend(`escrow/orders/${orderId}/close`, { method: "PATCH" });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({ type: "success", text: `Trade #${orderId} finalized and closed successfully!` });
+        if (activeEscrowTrade?.id === orderId) {
+          setActiveEscrowTrade((prev) => prev ? { ...prev, is_closed: true, status: "success" } : null);
+        }
+        loadAdminData();
+      } else {
+        setFeedback({ type: "error", text: data.error || "Failed to close trade." });
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Network error closing trade." });
     }
   };
 
@@ -717,47 +777,56 @@ export default function AdminDashboardPage() {
             </div>
 
             {pendingDeposits.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#0b0f17] text-slate-400 uppercase tracking-wider text-[10px]">
-                    <tr>
-                      <th className="py-3 px-4">Ref Code</th>
-                      <th className="py-3 px-4">User</th>
-                      <th className="py-3 px-4">Method</th>
-                      <th className="py-3 px-4">Amount</th>
-                      <th className="py-3 px-4">Account / Phone</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.04]">
-                    {pendingDeposits.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-white/[0.02]">
-                        <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{tx.reference_code || `#${tx.id}`}</td>
-                        <td className="py-3.5 px-4">
-                          <p className="font-semibold text-white">{tx.user_name || "User"}</p>
-                          <p className="text-[10px] text-slate-400">{tx.user_email}</p>
-                        </td>
-                        <td className="py-3.5 px-4 font-bold text-slate-200">{tx.payment_method}</td>
-                        <td className="py-3.5 px-4 font-bold text-emerald-400 text-sm">+{Number(tx.amount).toLocaleString()} ETB</td>
-                        <td className="py-3.5 px-4 font-mono text-slate-300">{tx.account_number || "—"}</td>
-                        <td className="py-3.5 px-4 text-right space-x-2">
-                          <button
-                            onClick={() => handleTransactionAction(tx.id, "approved")}
-                            className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
-                          >
-                            Approve &amp; Credit Balance
-                          </button>
-                          <button
-                            onClick={() => handleTransactionAction(tx.id, "rejected")}
-                            className="rounded-lg bg-rose-500/20 border border-rose-500/40 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition"
-                          >
-                            Reject
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-3">
+                {pendingDeposits.map((tx) => (
+                  <div key={tx.id} className="rounded-xl border border-white/[0.06] bg-[#0c1017] p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-amber-400">{tx.reference_code || `#${tx.id}`}</span>
+                          <span className="font-bold text-emerald-400 text-sm">+{Number(tx.amount).toLocaleString()} ETB</span>
+                          <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[9px] font-bold text-amber-300">
+                            {tx.payment_method}
+                          </span>
+                        </div>
+                        <p className="text-xs text-white font-semibold">{tx.user_name || "User"}</p>
+                        <p className="text-[10px] text-slate-400">{tx.user_email} &bull; Acct: {tx.account_number || "—"}</p>
+                        <p className="text-[10px] text-slate-500">{new Date(tx.created_at).toLocaleString()}</p>
+                      </div>
+                      {/* Payment Screenshot Thumbnail */}
+                      {tx.screenshot_url && (
+                        <a
+                          href={`http://localhost:4001${tx.screenshot_url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="View full payment screenshot"
+                          className="shrink-0"
+                        >
+                          <img
+                            src={`http://localhost:4001${tx.screenshot_url}`}
+                            alt="Payment screenshot"
+                            className="h-16 w-20 rounded-lg object-cover border border-amber-500/30 hover:border-amber-400 transition cursor-pointer shadow-md"
+                          />
+                          <p className="text-[9px] text-amber-400 text-center mt-0.5">View Proof</p>
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleTransactionAction(tx.id, "approved")}
+                        className="flex-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
+                      >
+                        ✓ Approve &amp; Credit Balance
+                      </button>
+                      <button
+                        onClick={() => handleTransactionAction(tx.id, "rejected")}
+                        className="rounded-lg bg-rose-500/20 border border-rose-500/40 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-slate-500">
@@ -891,6 +960,31 @@ export default function AdminDashboardPage() {
                           <span>{trade.buyer_name || "Buyer"} ➔ {trade.seller_name || "Seller"}</span>
                           <span className="font-bold text-teal-400">{Number(trade.amount).toLocaleString()} ETB</span>
                         </div>
+                        {/* Confirmation status badges */}
+                        {!trade.is_closed && (trade.buyer_confirmed || trade.seller_confirmed) && (
+                          <div className="flex gap-1.5 flex-wrap mt-1">
+                            <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-semibold ${trade.buyer_confirmed ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/10 text-slate-500"}`}>
+                              B: {trade.buyer_confirmed ? "✓" : "…"}
+                            </span>
+                            <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-semibold ${trade.seller_confirmed ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/10 text-slate-500"}`}>
+                              S: {trade.seller_confirmed ? "✓" : "…"}
+                            </span>
+                          </div>
+                        )}
+                        {trade.is_closed && (
+                          <span className="mt-1 inline-flex items-center gap-1 text-[9px] rounded-full px-1.5 py-0.5 bg-slate-500/20 text-slate-400 font-semibold">
+                            <Lock size={8} /> Closed
+                          </span>
+                        )}
+                        {/* Finalize button when both confirmed but not closed */}
+                        {trade.buyer_confirmed && trade.seller_confirmed && !trade.is_closed && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCloseTrade(trade.id); }}
+                            className="mt-1.5 w-full flex items-center justify-center gap-1 rounded-lg bg-amber-500 py-1 text-[10px] font-bold text-slate-950 hover:bg-amber-400 transition"
+                          >
+                            <CheckCircle2 size={10} /> Finalize &amp; Close Trade
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -918,8 +1012,32 @@ export default function AdminDashboardPage() {
                       </p>
                     </div>
 
-                    {activeEscrowTrade.status === "processing" && (
-                      <div className="flex items-center gap-2">
+                    {activeEscrowTrade.status === "processing" && !activeEscrowTrade.is_closed && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Prompt buyer instruction button */}
+                        {!activeEscrowTrade.buyer_confirmed && (
+                          <button
+                            onClick={() => handleRequestBuyerConfirmation(activeEscrowTrade.id)}
+                            className="flex items-center gap-1 rounded-lg bg-teal-500/20 border border-teal-500/40 px-3 py-1.5 text-xs font-bold text-teal-300 hover:bg-teal-500/30 transition"
+                            title="Send official instruction asking buyer to verify and Mark as Complete"
+                          >
+                            <MessageSquare size={13} />
+                            Prompt Buyer to Confirm
+                          </button>
+                        )}
+
+                        {/* Finalize & Close trade button when both confirmed */}
+                        {activeEscrowTrade.buyer_confirmed && activeEscrowTrade.seller_confirmed && (
+                          <button
+                            onClick={() => handleCloseTrade(activeEscrowTrade.id)}
+                            className="flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300 shadow-md transition"
+                            title="Finalize trade, release funds, and close conversation"
+                          >
+                            <CheckCircle2 size={13} />
+                            Finalize &amp; Close Trade
+                          </button>
+                        )}
+
                         <button
                           onClick={() => handleEscrowAction(activeEscrowTrade.id, "approve")}
                           className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
@@ -962,7 +1080,19 @@ export default function AdminDashboardPage() {
                                   {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                                 </span>
                               </div>
-                              <p>{m.message}</p>
+                              {m.message_type === "image" && m.attachment_url ? (
+                                <a href={`http://localhost:4001${m.attachment_url}`} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={`http://localhost:4001${m.attachment_url}`}
+                                    alt="Shared image"
+                                    className="max-w-full rounded-lg max-h-32 object-contain mt-1 border border-white/10 hover:border-amber-500/40 transition cursor-pointer"
+                                  />
+                                </a>
+                              ) : m.message_type === "voice" && m.attachment_url ? (
+                                <audio controls src={`http://localhost:4001${m.attachment_url}`} className="w-full h-8 rounded mt-1" />
+                              ) : (
+                                <p>{m.message}</p>
+                              )}
                             </div>
                           </div>
                         );

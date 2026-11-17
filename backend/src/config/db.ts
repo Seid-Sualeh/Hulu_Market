@@ -99,6 +99,7 @@ export async function initDatabase(): Promise<boolean> {
         account_number VARCHAR(100),
         account_name VARCHAR(150),
         reference_code VARCHAR(100),
+        screenshot_url VARCHAR(500) NULL,
         status ENUM('pending', 'approved', 'rejected', 'completed') NOT NULL DEFAULT 'pending',
         admin_notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -107,6 +108,10 @@ export async function initDatabase(): Promise<boolean> {
         INDEX idx_tx_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+    // Migrate: add screenshot_url if table already existed without it
+    try {
+      await conn.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS screenshot_url VARCHAR(500) NULL`);
+    } catch { /* column already exists */ }
 
     // 4. Escrow P2P Orders table
     await conn.query(`
@@ -121,6 +126,11 @@ export async function initDatabase(): Promise<boolean> {
         seller_name VARCHAR(150),
         amount DECIMAL(15, 2) NOT NULL,
         status ENUM('processing', 'success', 'cancelled') NOT NULL DEFAULT 'processing',
+        buyer_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+        seller_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+        buyer_confirmation_requested BOOLEAN NOT NULL DEFAULT FALSE,
+        is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+        closed_at TIMESTAMP NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_escrow_buyer (buyer_id),
@@ -128,6 +138,14 @@ export async function initDatabase(): Promise<boolean> {
         INDEX idx_escrow_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+    // Migrate: add new columns if table already existed
+    try {
+      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS buyer_confirmed BOOLEAN NOT NULL DEFAULT FALSE`);
+      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS seller_confirmed BOOLEAN NOT NULL DEFAULT FALSE`);
+      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS buyer_confirmation_requested BOOLEAN NOT NULL DEFAULT FALSE`);
+      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS is_closed BOOLEAN NOT NULL DEFAULT FALSE`);
+      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP NULL`);
+    } catch { /* columns already exist */ }
 
     // 5. Escrow Chat Messages (Supervised by Admin, Seller, and Buyer)
     await conn.query(`
@@ -138,10 +156,17 @@ export async function initDatabase(): Promise<boolean> {
         sender_name VARCHAR(150) NOT NULL,
         sender_role ENUM('buyer', 'seller', 'admin') NOT NULL,
         message TEXT NOT NULL,
+        message_type ENUM('text', 'voice', 'image') NOT NULL DEFAULT 'text',
+        attachment_url VARCHAR(500) NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_msg_order (order_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+    // Migrate: add new columns if table already existed
+    try {
+      await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS message_type ENUM('text','voice','image') NOT NULL DEFAULT 'text'`);
+      await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS attachment_url VARCHAR(500) NULL`);
+    } catch { /* columns already exist */ }
 
     // Seed default admin account if not already present
     const [existingAdmins]: [any[], any] = await conn.query(

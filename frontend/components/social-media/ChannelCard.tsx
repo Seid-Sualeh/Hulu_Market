@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Eye,
   Heart,
+  Loader2,
   ShoppingCart,
   Star,
   Users,
@@ -14,12 +15,14 @@ interface ChannelCardProps {
   channel: ChannelItem;
   onBuy?: (channel: ChannelItem) => void;
   onDetails?: (channel: ChannelItem) => void;
+  isBuying?: boolean;
 }
 
 export default function ChannelCard({
   channel,
   onBuy,
   onDetails,
+  isBuying = false,
 }: ChannelCardProps) {
   const [starred, setStarred] = useState(false);
 
@@ -331,11 +334,16 @@ export default function ChannelCard({
 
           <button
             type="button"
+            disabled={isBuying}
             onClick={() => onBuy?.(channel)}
-            className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-md transition ${platformConfig.btnClass}`}
+            className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold text-white shadow-md transition disabled:opacity-70 ${platformConfig.btnClass}`}
           >
-            <ShoppingCart size={14} />
-            <span>Buy</span>
+            {isBuying ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <ShoppingCart size={14} />
+            )}
+            <span>{isBuying ? "Processing..." : "Buy"}</span>
           </button>
         </div>
       </div>

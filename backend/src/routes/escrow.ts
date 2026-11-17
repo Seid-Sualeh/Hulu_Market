@@ -144,22 +144,43 @@ escrowRouter.get("/orders/:id/messages", async (req: Request, res: Response): Pr
 escrowRouter.post("/orders/:id/messages", async (req: Request, res: Response): Promise<void> => {
   try {
     const orderId = parseInt(req.params.id as string, 10);
-    const { senderId, senderName, senderRole, message } = req.body;
+    const { senderId, senderName, senderRole, message, messageType, attachmentUrl } = req.body;
 
     if (!message || !message.trim()) {
       res.status(400).json({ success: false, error: "Message cannot be empty." });
       return;
     }
 
+    // Verify order is open
+    const [orderCheck] = await pool.query<RowDataPacket[]>(
+      "SELECT is_closed FROM escrow_orders WHERE id = ? LIMIT 1",
+      [orderId]
+    );
+
+    if (orderCheck.length === 0) {
+      res.status(404).json({ success: false, error: "Escrow order not found." });
+      return;
+    }
+
+    if (orderCheck[0].is_closed) {
+      res.status(400).json({
+        success: false,
+        error: "This trade conversation is closed. No further messages can be sent.",
+      });
+      return;
+    }
+
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type, attachment_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         orderId,
         senderId || 0,
         senderName || "User",
         senderRole || "buyer",
         message.trim(),
+        messageType || "text",
+        attachmentUrl || null,
       ]
     );
 
@@ -173,6 +194,8 @@ escrowRouter.post("/orders/:id/messages", async (req: Request, res: Response): P
         sender_name: senderName || "User",
         sender_role: senderRole || "buyer",
         message: message.trim(),
+        message_type: messageType || "text",
+        attachment_url: attachmentUrl || null,
         created_at: new Date().toISOString(),
       },
     });
@@ -292,6 +315,230 @@ escrowRouter.patch("/orders/:id/action", async (req: Request, res: Response): Pr
   } catch (error: unknown) {
     const err = error as Error;
     console.error("[Escrow Action Error]:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+/**
+ * POST /api/escrow/orders/:id/request-confirmation
+ * Administrator sends the official confirmation instruction to the buyer:
+ * "If you have successfully received the ownership of your purchased channel and verified everything, please click the Mark as Complete button."
+ */
+escrowRouter.post("/orders/:id/request-confirmation", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orderId = parseInt(req.params.id as string, 10);
+
+    const [orderRows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM escrow_orders WHERE id = ? LIMIT 1",
+      [orderId]
+    );
+
+    if (orderRows.length === 0) {
+      res.status(404).json({ success: false, error: "Escrow order not found." });
+      return;
+    }
+
+    const order = orderRows[0];
+    if (order.is_closed) {
+      res.status(400).json({ success: false, error: "Trade conversation is already closed." });
+      return;
+    }
+
+    // Set buyer_confirmation_requested flag
+    await pool.query(
+      "UPDATE escrow_orders SET buyer_confirmation_requested = TRUE WHERE id = ?",
+      [orderId]
+    );
+
+    const instruction =
+      "If you have successfully received the ownership of your purchased channel and verified everything, please click the Mark as Complete button.";
+
+    const [msgResult] = await pool.query<ResultSetHeader>(
+      `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type)
+       VALUES (?, 0, 'Hulu Market Admin', 'admin', ?, 'text')`,
+      [orderId, instruction]
+    );
+
+    res.json({
+      success: true,
+      message: "Confirmation instruction sent to buyer successfully.",
+      instructionMessage: {
+        id: msgResult.insertId,
+        order_id: orderId,
+        sender_id: 0,
+        sender_name: "Hulu Market Admin",
+        sender_role: "admin",
+        message: instruction,
+        message_type: "text",
+        created_at: new Date().toISOString(),
+      },
+    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error("[Request Confirmation Error]:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+/**
+ * PATCH /api/escrow/orders/:id/confirm
+ * Buyer or seller confirms ownership transfer completion.
+ */
+escrowRouter.patch("/orders/:id/confirm", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orderId = parseInt(req.params.id as string, 10);
+    const { role, userId } = req.body; // role: 'buyer' | 'seller'
+
+    if (!role || !["buyer", "seller"].includes(role)) {
+      res.status(400).json({ success: false, error: "Role must be 'buyer' or 'seller'." });
+      return;
+    }
+
+    const [orderRows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM escrow_orders WHERE id = ? LIMIT 1",
+      [orderId]
+    );
+
+    if (orderRows.length === 0) {
+      res.status(404).json({ success: false, error: "Escrow order not found." });
+      return;
+    }
+
+    const order = orderRows[0];
+    if (order.is_closed) {
+      res.status(400).json({ success: false, error: "This trade conversation is already closed." });
+      return;
+    }
+
+    // Verify confirming user is the actual buyer or seller
+    const uId = userId ? parseInt(String(userId), 10) : null;
+    if (role === "buyer" && uId && order.buyer_id !== uId) {
+      res.status(403).json({ success: false, error: "Only the buyer of this trade can confirm as buyer." });
+      return;
+    }
+    if (role === "seller" && uId && order.seller_id !== uId) {
+      res.status(403).json({ success: false, error: "Only the seller of this trade can confirm as seller." });
+      return;
+    }
+
+    // Update the confirmation flag
+    const field = role === "buyer" ? "buyer_confirmed" : "seller_confirmed";
+    await pool.query(`UPDATE escrow_orders SET ${field} = TRUE WHERE id = ?`, [orderId]);
+
+    // Post automated confirmation message
+    const confirmMsg =
+      role === "buyer"
+        ? "✅ Buyer has confirmed successful receipt of the channel ownership. Waiting for seller confirmation..."
+        : "✅ Seller has confirmed the ownership transfer is complete. Waiting for buyer confirmation...";
+
+    await pool.query(
+      `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type)
+       VALUES (?, 0, 'Hulu Escrow Bot', 'admin', ?, 'text')`,
+      [orderId, confirmMsg]
+    );
+
+    // Check if both have now confirmed
+    const [updatedRows] = await pool.query<RowDataPacket[]>(
+      "SELECT buyer_confirmed, seller_confirmed FROM escrow_orders WHERE id = ? LIMIT 1",
+      [orderId]
+    );
+    const bothConfirmed = !!updatedRows[0]?.buyer_confirmed && !!updatedRows[0]?.seller_confirmed;
+
+    if (bothConfirmed) {
+      await pool.query(
+        `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type)
+         VALUES (?, 0, 'Hulu Escrow Bot', 'admin', ?, 'text')`,
+        [orderId, "🎉 Both parties have confirmed! The admin can now finalize and close this trade."]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} confirmation recorded.`,
+      bothConfirmed,
+    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error("[Escrow Confirm Error]:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/escrow/orders/:id/close
+ * Admin closes the trade conversation after both parties have confirmed.
+ */
+escrowRouter.patch("/orders/:id/close", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orderId = parseInt(req.params.id as string, 10);
+
+    const [orderRows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM escrow_orders WHERE id = ? LIMIT 1",
+      [orderId]
+    );
+
+    if (orderRows.length === 0) {
+      res.status(404).json({ success: false, error: "Escrow order not found." });
+      return;
+    }
+
+    const order = orderRows[0];
+
+    if (order.is_closed) {
+      res.status(400).json({ success: false, error: "Trade is already closed." });
+      return;
+    }
+
+    if (!order.buyer_confirmed || !order.seller_confirmed) {
+      res.status(400).json({
+        success: false,
+        error: "Cannot close trade until both buyer and seller have confirmed completion.",
+      });
+      return;
+    }
+
+    // Close the trade and mark as success
+    await pool.query(
+      "UPDATE escrow_orders SET is_closed = TRUE, closed_at = NOW(), status = 'success' WHERE id = ?",
+      [orderId]
+    );
+
+    // Release funds from locked_balance to seller (only if not already released)
+    if (order.seller_id && order.status !== "success") {
+      await pool.query(
+        "UPDATE users SET balance = balance + ? WHERE id = ?",
+        [order.amount, order.seller_id]
+      );
+      await pool.query(
+        "UPDATE users SET locked_balance = GREATEST(0, locked_balance - ?) WHERE id = ?",
+        [order.amount, order.buyer_id]
+      );
+    }
+
+    // Mark channel as sold
+    if (order.channel_id) {
+      await pool.query("UPDATE channels SET status = 'sold' WHERE id = ?", [order.channel_id]);
+    }
+
+    // Post final closure message
+    await pool.query(
+      `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type)
+       VALUES (?, 0, 'Hulu Market Admin', 'admin', ?, 'text')`,
+      [
+        orderId,
+        `🔒 This trade has been officially closed by the administrator. Congratulations to both buyer and seller! The funds of ${order.amount} ETB have been released to the seller. This conversation is now read-only.`,
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: `Trade #${orderId} has been finalized and closed successfully.`,
+    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error("[Escrow Close Error]:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

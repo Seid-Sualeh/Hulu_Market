@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import path from "path";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { authRouter } from "./routes/auth.js";
@@ -8,6 +9,7 @@ import { transactionsRouter } from "./routes/transactions.js";
 import { channelsRouter } from "./routes/channels.js";
 import { userRouter } from "./routes/user.js";
 import { escrowRouter } from "./routes/escrow.js";
+import { uploadRouter } from "./routes/upload.js";
 
 export function createApp(frontendOrigin?: string) {
   const app = express();
@@ -60,6 +62,14 @@ export function createApp(frontendOrigin?: string) {
   // Mount Escrow routes (P2P orders, buyer-seller chat supervised by admin)
   app.use("/escrow", escrowRouter);
   app.use("/api/escrow", escrowRouter);
+
+  // Mount Upload route for file uploads (screenshots, voice, images)
+  app.use("/upload", uploadRouter);
+  app.use("/api/upload", uploadRouter);
+
+  // Serve static uploaded files
+  const uploadsPath = path.resolve("uploads");
+  app.use("/uploads", express.static(uploadsPath));
 
   return app;
 }

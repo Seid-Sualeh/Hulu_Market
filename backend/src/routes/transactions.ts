@@ -10,7 +10,7 @@ export const transactionsRouter = Router();
  */
 transactionsRouter.post("/deposit", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId, amount, paymentMethod, accountNumber, accountName, referenceCode } = req.body;
+    const { userId, amount, paymentMethod, accountNumber, accountName, referenceCode, screenshotUrl } = req.body;
 
     const numAmount = Number(amount);
     if (!numAmount || isNaN(numAmount) || numAmount <= 0) {
@@ -28,8 +28,8 @@ transactionsRouter.post("/deposit", async (req: Request, res: Response): Promise
     const refCode = referenceCode || `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO transactions (user_id, type, amount, payment_method, account_number, account_name, reference_code, status)
-       VALUES (?, 'deposit', ?, ?, ?, ?, ?, 'pending')`,
+      `INSERT INTO transactions (user_id, type, amount, payment_method, account_number, account_name, reference_code, screenshot_url, status)
+       VALUES (?, 'deposit', ?, ?, ?, ?, ?, ?, 'pending')`,
       [
         targetUserId,
         numAmount,
@@ -37,6 +37,7 @@ transactionsRouter.post("/deposit", async (req: Request, res: Response): Promise
         accountNumber || "",
         accountName || "",
         refCode,
+        screenshotUrl || null,
       ]
     );
 

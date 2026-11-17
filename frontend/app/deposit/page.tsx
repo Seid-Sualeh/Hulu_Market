@@ -1,21 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import {
   AlertCircle,
-  Building2,
+  ArrowLeft,
   Camera,
   Check,
   CheckCircle2,
   Clock,
-  Coins,
   Copy,
-  DollarSign,
-  Phone,
-  QrCode,
-  Smartphone,
-  Upload,
   User,
   Wallet,
   X,
@@ -33,8 +28,13 @@ interface PaymentMethod {
   imageSrc: string;
 }
 
-export default function DepositPage() {
+function DepositPageInner() {
+  const router = useRouter();
   const { user, refreshUser } = useAuth();
+  const searchParams = useSearchParams();
+  const redirectUrl = searchParams.get("redirect");
+  const neededAmount = searchParams.get("needed");
+
   const [selectedMethod, setSelectedMethod] =
     useState<PaymentMethod["id"]>("CBE");
   const [depositorName, setDepositorName] = useState("");
@@ -46,6 +46,7 @@ export default function DepositPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [approvedAlert, setApprovedAlert] = useState<string | null>(null);
 
   // Sync depositor name with logged in user
   useEffect(() => {
@@ -134,7 +135,22 @@ export default function DepositPage() {
               time: dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             };
           });
-        setDepositHistory(deposits);
+
+        // Auto-detect approval: if any pending deposit just became approved
+        setDepositHistory((prev) => {
+          const hadPending = prev.some((p) => p.status === "pending");
+          const nowApproved = deposits.find((d: any) => d.status === "approved");
+          if (hadPending && nowApproved && !approvedAlert) {
+            setApprovedAlert(
+              `🎉 Deposit Approved! Your balance has been credited with ${nowApproved.amount}. Redirecting back to complete your purchase...`
+            );
+            refreshUser?.();
+            setTimeout(() => {
+              router.push(redirectUrl || "/social-media");
+            }, 2000);
+          }
+          return deposits;
+        });
       }
     } catch {
       // ignore
@@ -145,6 +161,19 @@ export default function DepositPage() {
     fetchTransactions();
     refreshUser?.();
   }, [user?.id]);
+
+  // Polling for admin approval when a deposit is pending
+  useEffect(() => {
+    const hasPending = depositHistory.some((d) => d.status === "pending") || submittedSuccess;
+    if (!hasPending || !user?.id) return;
+
+    const interval = setInterval(() => {
+      fetchTransactions();
+      refreshUser?.();
+    }, 3500);
+
+    return () => clearInterval(interval);
+  }, [depositHistory, submittedSuccess, user?.id]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -177,6 +206,22 @@ export default function DepositPage() {
 
     setIsSubmitting(true);
     try {
+      // Upload screenshot first if provided
+      let screenshotUrl: string | null = null;
+      const screenshotFile = fileInputRef.current?.files?.[0];
+      if (screenshotFile) {
+        const formData = new FormData();
+        formData.append("file", screenshotFile);
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.success) {
+          screenshotUrl = uploadData.url;
+        }
+      }
+
       const res = await fetch("/api/transactions/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -186,12 +231,17 @@ export default function DepositPage() {
           paymentMethod: currentMethod.name,
           accountNumber: currentMethod.accountNumber,
           accountName: depositorName,
+          screenshotUrl,
         }),
       });
 
       const data = await res.json();
       if (data.success) {
         setSubmittedSuccess(true);
+        // Store redirect URL for after admin approval
+        if (redirectUrl) {
+          try { localStorage.setItem("hulu_deposit_redirect", redirectUrl); } catch {}
+        }
         fetchTransactions();
         refreshUser?.();
       } else {
@@ -215,6 +265,41 @@ export default function DepositPage() {
           Send payment, then submit your name, amount, and screenshot
         </p>
       </div>
+
+      {/* Approval & Redirect Banner */}
+      {approvedAlert && (
+        <div className="rounded-2xl border border-emerald-500/50 bg-emerald-950/40 p-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+          <CheckCircle2 size={22} className="text-emerald-400 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-bold text-emerald-300">{approvedAlert}</p>
+            <p className="text-xs text-emerald-400/80 mt-0.5">Please wait, loading channel listing...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Grid: Left Form (approx 65%), Right History (approx 35%) */}
+      {neededAmount && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-950/20 p-4 flex items-start gap-3">
+          <AlertCircle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-xs font-semibold text-amber-300">
+              Insufficient Balance — You need at least{" "}
+              <span className="font-bold text-amber-200">{Number(neededAmount).toLocaleString()} ETB</span> to complete your purchase.
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Deposit funds below. After admin approval your balance will be credited and you can return to buy the channel.
+            </p>
+            {redirectUrl && (
+              <a
+                href={redirectUrl}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300"
+              >
+                ← Back to Marketplace
+              </a>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main Grid: Left Form (approx 65%), Right History (approx 35%) */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -274,6 +359,14 @@ export default function DepositPage() {
                   >
                     Make Another Deposit
                   </button>
+                  {redirectUrl && (
+                    <a
+                      href={redirectUrl}
+                      className="mt-3 ml-2 inline-block rounded-xl bg-amber-400 px-4 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300"
+                    >
+                      Back to Marketplace
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -581,5 +674,13 @@ export default function DepositPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DepositPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64 text-slate-400 text-sm">Loading...</div>}>
+      <DepositPageInner />
+    </Suspense>
   );
 }

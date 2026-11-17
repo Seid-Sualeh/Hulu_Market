@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Coins, Filter, Search, X, Zap } from "lucide-react";
+import { Coins, Filter, Loader2, Search, X, Zap } from "lucide-react";
 import PlatformFilter from "@/components/social-media/PlatformFilter";
 import ChannelCard from "@/components/social-media/ChannelCard";
 import PromoBanner from "@/components/social-media/PromoBanner";
@@ -12,14 +12,29 @@ import { isUserSignedIn, useAuth } from "@/lib/auth";
 
 export default function SocialMediaPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [platform, setPlatform] = useState<PlatformType>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedChannel, setSelectedChannel] = useState<ChannelItem | null>(
-    null,
-  );
+  const [selectedChannel, setSelectedChannel] = useState<ChannelItem | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [buyingChannelId, setBuyingChannelId] = useState<string | null>(null);
   const [dbChannels, setDbChannels] = useState<ChannelItem[]>([]);
+  const [pendingBuy, setPendingBuy] = useState<{
+    channelId: string;
+    channelName: string;
+    price: number;
+  } | null>(null);
+
+  useEffect(() => {
+    refreshUser?.();
+    try {
+      const stored = localStorage.getItem("hulu_pending_buy");
+      if (stored) {
+        setPendingBuy(JSON.parse(stored));
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     fetch("/api/channels")
@@ -28,12 +43,16 @@ export default function SocialMediaPage() {
         if (data.success && Array.isArray(data.channels)) {
           const mapped: ChannelItem[] = data.channels.map((c: any) => ({
             id: `db-${c.id}`,
+            dbId: c.id,
+            sellerId: c.seller_id,
+            sellerName: c.seller_name || "Verified Seller",
             name: c.name,
             platform: (c.platform || "telegram").toLowerCase() as PlatformType,
             category: c.category || "General",
             followers: c.subscribers || "0",
             engagement: c.views_or_likes || "Active",
             price: `${Number(c.price).toLocaleString()} ETB`,
+            rawPrice: Number(c.price),
             linkText: c.name,
             linkUrl: c.link_url || "#",
             featured: false,
@@ -44,18 +63,15 @@ export default function SocialMediaPage() {
       .catch(() => {});
   }, []);
 
-  // Filter channels based on search query and selected platform
   const filteredChannels = useMemo(() => {
     const combined = [...dbChannels, ...initialChannels];
     return combined.filter((ch) => {
-      const matchesPlatform =
-        platform === "all" || ch.platform === platform;
+      const matchesPlatform = platform === "all" || ch.platform === platform;
       const matchesSearch =
         searchQuery.trim() === "" ||
         ch.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ch.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ch.linkText.toLowerCase().includes(searchQuery.toLowerCase());
-
       return matchesPlatform && matchesSearch;
     });
   }, [platform, searchQuery, dbChannels]);
@@ -64,72 +80,104 @@ export default function SocialMediaPage() {
   const secondBatch = filteredChannels.slice(2);
 
   const handleBuy = async (channel: ChannelItem) => {
-    // If user is not signed in, redirect to auth page
+    // 1. Must be signed in
     if (!isUserSignedIn()) {
       router.push(`/auth?redirect=${encodeURIComponent("/social-media")}`);
       return;
     }
 
+    const priceNum = (channel as any).rawPrice != null
+      ? Number((channel as any).rawPrice)
+      : parseFloat(channel.price.replace(/[^0-9.]/g, "")) || 0;
+
+    // 2. Check balance
+    const userBalance = Number(user?.balance) || 0;
+    if (userBalance < priceNum) {
+      try {
+        localStorage.setItem(
+          "hulu_pending_buy",
+          JSON.stringify({ channelId: channel.id, channelName: channel.name, price: priceNum })
+        );
+      } catch {}
+      router.push(
+        `/deposit?redirect=/social-media&reason=insufficient_balance&needed=${priceNum}`
+      );
+      return;
+    }
+
+    // 3. Sufficient balance — initiate escrow
+    setBuyingChannelId(channel.id);
+    setPurchaseError(null);
+
     try {
-      const priceNum = parseFloat(channel.price.replace(/[^0-9.]/g, "")) || 0;
       const res = await fetch("/api/escrow/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          channelId: (channel as any).dbId || null,
           channelName: channel.name,
           platform: channel.platform,
           price: priceNum,
           buyerId: user?.id,
           buyerName: user?.name || user?.email,
-          sellerId: 1,
-          sellerName: "Verified Seller",
+          sellerId: (channel as any).sellerId || null,
+          sellerName: (channel as any).sellerName || "Verified Seller",
         }),
       });
 
       const data = await res.json();
       if (data.success) {
+        try { localStorage.removeItem("hulu_pending_buy"); } catch {}
+        setPendingBuy(null);
+        refreshUser?.();
         setPurchaseSuccess(
-          `Escrow trade #${data.orderId} created for "${channel.name}"! Open your Inbox to chat with seller and admin.`
+          `Escrow trade #${data.orderId} created for "${channel.name}"! Redirecting to your Inbox...`
         );
-        setTimeout(() => {
-          setPurchaseSuccess(null);
-        }, 6000);
+        setTimeout(() => router.push("/inbox"), 2000);
       } else {
-        alert(data.error || "Failed to initiate escrow trade.");
+        setPurchaseError(data.error || "Failed to initiate escrow trade.");
       }
     } catch {
-      alert("Network error. Please try again.");
+      setPurchaseError("Network error. Please try again.");
+    } finally {
+      setBuyingChannelId(null);
     }
   };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-16">
-      {/* Toast Alert */}
+      {/* Success Toast */}
       {purchaseSuccess && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl border border-teal-500/40 bg-[#0e1722] p-4 text-sm text-teal-300 shadow-2xl shadow-black/80 animate-in fade-in slide-in-from-bottom-3">
           <Coins size={18} className="text-amber-400" />
           <span>{purchaseSuccess}</span>
-          <button
-            type="button"
-            onClick={() => setPurchaseSuccess(null)}
-            className="text-slate-400 hover:text-white"
-          >
+          <button type="button" onClick={() => setPurchaseSuccess(null)} className="text-slate-400 hover:text-white">
             <X size={15} />
           </button>
         </div>
       )}
 
-      {/* Header section */}
+      {/* Error Toast */}
+      {purchaseError && (
+        <div className="fixed bottom-24 right-6 z-50 flex items-center gap-3 rounded-2xl border border-rose-500/40 bg-[#1a0a0a] p-4 text-sm text-rose-300 shadow-2xl shadow-black/80">
+          <span>{purchaseError}</span>
+          <button type="button" onClick={() => setPurchaseError(null)} className="text-slate-400 hover:text-white">
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
             Listing Channel
           </h1>
           <p className="mt-1 text-xs text-slate-400 font-medium">
-            3,726 channels &bull; <span className="text-amber-400 font-medium">Everything You Need. One Marketplace.</span>
+            3,726 channels &bull;{" "}
+            <span className="text-amber-400 font-medium">Everything You Need. One Marketplace.</span>
           </p>
         </div>
-
         <button
           type="button"
           title="Filter channels"
@@ -139,6 +187,58 @@ export default function SocialMediaPage() {
         </button>
       </div>
 
+      {/* Pending Buy Resume Banner (after deposit approval) */}
+      {pendingBuy && Number(user?.balance || 0) >= pendingBuy.price && (
+        <div className="rounded-2xl border border-amber-400/50 bg-gradient-to-r from-amber-500/15 via-[#111722] to-teal-500/15 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-amber-950/20 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-400/20 text-amber-400 border border-amber-400/40">
+              <Zap size={20} />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-amber-300">
+                Deposit Confirmed &bull; Balance is Sufficient!
+              </p>
+              <p className="text-xs text-white">
+                Ready to complete your purchase of <span className="font-bold text-amber-200">"{pendingBuy.channelName}"</span> for <span className="font-bold text-teal-300">{pendingBuy.price.toLocaleString()} ETB</span>?
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const target = filteredChannels.find((c) => c.id === pendingBuy.channelId) || {
+                  id: pendingBuy.channelId,
+                  name: pendingBuy.channelName,
+                  platform: "telegram" as const,
+                  category: "General",
+                  followers: "Verified",
+                  price: `${pendingBuy.price.toLocaleString()} ETB`,
+                  rawPrice: pendingBuy.price,
+                  linkText: pendingBuy.channelName,
+                  linkUrl: "#",
+                };
+                handleBuy(target);
+              }}
+              className="flex items-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 shadow-md hover:bg-amber-300 active:scale-95 transition"
+            >
+              <Zap size={14} className="fill-slate-950" />
+              <span>Complete Purchase Now</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                try { localStorage.removeItem("hulu_pending_buy"); } catch {}
+                setPendingBuy(null);
+              }}
+              className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-400 hover:text-white hover:bg-white/5 transition"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Search Bar */}
       <div className="group relative flex min-h-12 items-center rounded-xl border border-white/[0.08] bg-[#121721] shadow-inner transition-colors focus-within:border-cyan-500/50 focus-within:ring-2 focus-within:ring-cyan-500/10">
         <Search
@@ -147,9 +247,7 @@ export default function SocialMediaPage() {
           strokeWidth={2}
           className="pointer-events-none absolute left-4 text-slate-500 transition-colors group-focus-within:text-cyan-400"
         />
-        <label htmlFor="account-search" className="sr-only">
-          Search accounts
-        </label>
+        <label htmlFor="account-search" className="sr-only">Search accounts</label>
         <input
           id="account-search"
           type="search"
@@ -161,9 +259,9 @@ export default function SocialMediaPage() {
         {searchQuery && (
           <button
             type="button"
-            aria-label="Clear account search"
+            aria-label="Clear search"
             onClick={() => setSearchQuery("")}
-            className="absolute right-3 grid size-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+            className="absolute right-3 grid size-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[0.06] hover:text-slate-200"
           >
             <X size={16} />
           </button>
@@ -182,6 +280,7 @@ export default function SocialMediaPage() {
               channel={ch}
               onBuy={handleBuy}
               onDetails={(c) => setSelectedChannel(c)}
+              isBuying={buyingChannelId === ch.id}
             />
           ))}
         </div>
@@ -203,12 +302,13 @@ export default function SocialMediaPage() {
               channel={ch}
               onBuy={handleBuy}
               onDetails={(c) => setSelectedChannel(c)}
+              isBuying={buyingChannelId === ch.id}
             />
           ))}
         </div>
       )}
 
-      {/* Floating Action Button (bottom right coin badge like screenshot) */}
+      {/* Floating Action Button */}
       <div className="fixed bottom-6 right-6 z-30 flex flex-col items-center gap-2">
         <button
           type="button"
@@ -231,9 +331,7 @@ export default function SocialMediaPage() {
                 <span className="text-[10px] font-bold uppercase tracking-widest text-teal-400">
                   Channel Details
                 </span>
-                <h3 className="mt-1 text-xl font-bold text-white">
-                  {selectedChannel.name}
-                </h3>
+                <h3 className="mt-1 text-xl font-bold text-white">{selectedChannel.name}</h3>
               </div>
               <button
                 type="button"
@@ -247,33 +345,19 @@ export default function SocialMediaPage() {
             <div className="mt-4 space-y-3 text-sm text-slate-300">
               <div className="flex justify-between border-b border-white/[0.06] py-2">
                 <span className="text-slate-400">Platform</span>
-                <span className="font-semibold text-white capitalize">
-                  {selectedChannel.platform}
-                </span>
+                <span className="font-semibold text-white capitalize">{selectedChannel.platform}</span>
               </div>
               <div className="flex justify-between border-b border-white/[0.06] py-2">
                 <span className="text-slate-400">Category</span>
-                <span className="font-semibold text-white">
-                  {selectedChannel.category}
-                </span>
+                <span className="font-semibold text-white">{selectedChannel.category}</span>
               </div>
               <div className="flex justify-between border-b border-white/[0.06] py-2">
                 <span className="text-slate-400">Followers / Audience</span>
-                <span className="font-semibold text-white">
-                  {selectedChannel.followers}
-                </span>
-              </div>
-              <div className="flex justify-between border-b border-white/[0.06] py-2">
-                <span className="text-slate-400">Engagement</span>
-                <span className="font-semibold text-white">
-                  {selectedChannel.secondaryStat}
-                </span>
+                <span className="font-semibold text-white">{selectedChannel.followers}</span>
               </div>
               <div className="flex justify-between border-b border-white/[0.06] py-2">
                 <span className="text-slate-400">Asking Price</span>
-                <span className="text-lg font-bold text-amber-400">
-                  {selectedChannel.price}
-                </span>
+                <span className="text-lg font-bold text-amber-400">{selectedChannel.price}</span>
               </div>
             </div>
 
@@ -287,12 +371,14 @@ export default function SocialMediaPage() {
               </button>
               <button
                 type="button"
+                disabled={!!buyingChannelId}
                 onClick={() => {
                   handleBuy(selectedChannel);
                   setSelectedChannel(null);
                 }}
-                className="rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-500 shadow-md"
+                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-500 shadow-md disabled:opacity-60"
               >
+                {buyingChannelId && <Loader2 size={14} className="animate-spin" />}
                 Buy Now
               </button>
             </div>
