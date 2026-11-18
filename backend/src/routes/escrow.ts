@@ -78,9 +78,23 @@ escrowRouter.post("/order", async (req: Request, res: Response): Promise<void> =
        VALUES (?, 0, 'Hulu Escrow Bot', 'admin', ?)`,
       [
         orderId,
-        `Welcome to Hulu Market Escrow Protection! The buyer's payment of ${numAmount} ETB is safely locked. Seller: please transfer channel ownership or access credentials to the buyer here. Admin is supervising this trade.`,
+        `Welcome to Hulu Market Escrow Protection! The buyer's payment of ${numAmount} ETB is safely locked. Seller: please transfer channel ownership credentials and evidence to the buyer here. Admin is supervising this trade.`,
       ]
     );
+
+    // Notify the seller about the purchase
+    if (sId) {
+      try {
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+           VALUES (?, 'escrow', 'Buyer Initiated Channel Purchase! 🎉', ?, '/inbox', 'Open Escrow Chat')`,
+          [
+            sId,
+            `A buyer has initiated a purchase of your channel "${channelName}" for ${numAmount} ETB. The payment is secured in escrow. Please open your Inbox to coordinate ownership transfer.`,
+          ]
+        );
+      } catch { /* ignore notification errors */ }
+    }
 
     res.status(201).json({
       success: true,

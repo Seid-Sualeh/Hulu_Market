@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth";
 import {
   AlertCircle,
   Archive,
@@ -10,7 +11,8 @@ import {
   Boxes,
   Check,
   CheckCircle2,
-  ChevronRight,
+  Clock,
+  Edit3,
   ExternalLink,
   Eye,
   Filter,
@@ -19,6 +21,7 @@ import {
   Package,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShoppingBag,
   Sparkles,
   Store,
@@ -27,107 +30,69 @@ import {
   XCircle,
 } from "lucide-react";
 
-interface ListingItem {
-  id: string;
-  title: string;
+interface MyChannelListing {
+  id: number;
+  seller_id: number;
+  name: string;
+  platform: string;
   category: string;
-  categorySlug: string;
-  platform?: string;
-  subscribers?: string;
+  subscribers: string;
+  views_or_likes: string;
   price: number;
-  status: "Active" | "Sold Out" | "Rejected";
-  date: string;
-  image?: string;
-  views: number;
-  inquiries: number;
+  link_url?: string;
+  screenshot_url?: string;
+  description?: string;
+  rejection_reason?: string;
+  status: "active" | "pending" | "sold" | "rejected";
+  created_at: string;
 }
 
+type TabType = "all" | "active" | "pending" | "rejected" | "sold";
+
 export default function MyMarketPlacePage() {
-  const [activeTab, setActiveTab] = useState<"Active" | "Sold Out" | "Rejected">("Active");
-  const [showDemoListings, setShowDemoListings] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const router = useRouter();
+  const { user, mounted } = useAuth();
+  const [activeTab, setActiveTab] = useState<TabType>("all");
+  const [channels, setChannels] = useState<MyChannelListing[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Sample listings across the 7 marketplace categories when demo is toggled
-  const sampleListings: ListingItem[] = [
-    {
-      id: "LST-8901",
-      title: "@EthioCryptoHub (Verified Channel)",
-      category: "Social Media Channels",
-      categorySlug: "social-media",
-      platform: "Telegram",
-      subscribers: "48,500 members",
-      price: 24500,
-      status: "Active",
-      date: "Nov 12, 2026",
-      views: 342,
-      inquiries: 18,
-    },
-    {
-      id: "LST-8902",
-      title: "Luxury 3-Bedroom Apartment (Bole Atlas)",
-      category: "Houses & Properties",
-      categorySlug: "houses-properties",
-      subscribers: "185 sqm • 3 Bed 2 Bath",
-      price: 18500000,
-      status: "Active",
-      date: "Nov 09, 2026",
-      views: 890,
-      inquiries: 45,
-    },
-    {
-      id: "LST-8903",
-      title: "Toyota RAV4 2022 (Hybrid, Full Option)",
-      category: "Vehicles",
-      categorySlug: "vehicles",
-      subscribers: "18,000 km • Automatic",
-      price: 7800000,
-      status: "Sold Out",
-      date: "Oct 28, 2026",
-      views: 1420,
-      inquiries: 76,
-    },
-    {
-      id: "LST-8904",
-      title: "MacBook Pro M2 Max 32GB 1TB",
-      category: "Electronics",
-      categorySlug: "electronics",
-      subscribers: "Battery 98% • Mint Condition",
-      price: 165000,
-      status: "Rejected",
-      date: "Oct 15, 2026",
-      views: 45,
-      inquiries: 2,
-    },
-  ];
+  const loadMyChannels = async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/channels/my?sellerId=${user.id}`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.channels)) {
+        setChannels(data.channels);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const listings = showDemoListings ? sampleListings : [];
+  useEffect(() => {
+    loadMyChannels();
+  }, [user?.id]);
 
-  const activeCount = listings.filter((i) => i.status === "Active").length;
-  const soldCount = listings.filter((i) => i.status === "Sold Out").length;
-  const rejectedCount = listings.filter((i) => i.status === "Rejected").length;
-  const totalCount = listings.length;
+  const activeCount = channels.filter((c) => c.status === "active").length;
+  const pendingCount = channels.filter((c) => c.status === "pending").length;
+  const rejectedCount = channels.filter((c) => c.status === "rejected").length;
+  const soldCount = channels.filter((c) => c.status === "sold").length;
+  const totalCount = channels.length;
 
-  const currentTabCount =
-    activeTab === "Active"
-      ? activeCount
-      : activeTab === "Sold Out"
-      ? soldCount
-      : rejectedCount;
-
-  const filteredListings = listings.filter((item) => {
-    const matchesTab = item.status === activeTab;
-    const matchesCategory =
-      selectedCategory === "All" || item.category === selectedCategory;
-    return matchesTab && matchesCategory;
+  const filteredChannels = channels.filter((ch) => {
+    if (activeTab === "all") return true;
+    return ch.status === activeTab;
   });
 
   return (
-    <div className="min-h-screen bg-[#0b0f17] text-slate-100 p-4 md:p-8 lg:p-10">
+    <div className="min-h-screen bg-[#0b0f17] text-slate-100 p-4 md:p-8 lg:p-10 pb-24">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header Row: Matching design with "My Marketplace" title & "+ NEW LISTING" button */}
+        {/* Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            {/* Layers / Market Icon Badge */}
             <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-400 shrink-0 shadow-sm">
               <Layers className="w-6 h-6 stroke-[1.8]" />
             </div>
@@ -137,23 +102,20 @@ export default function MyMarketPlacePage() {
                 My Marketplace
               </h1>
               <p className="text-xs text-slate-400 mt-1">
-                {totalCount} total · {activeCount} live · {soldCount} sold · {rejectedCount} rejected
+                {totalCount} total listings &bull; {activeCount} published &bull; {pendingCount} pending review &bull; {rejectedCount} rejected &bull; {soldCount} sold
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Quick Demo Preview Toggle */}
             <button
-              type="button"
-              onClick={() => setShowDemoListings(!showDemoListings)}
-              className="px-3.5 py-2 rounded-xl border border-slate-700/80 bg-[#161d2b]/70 hover:bg-[#1a2333] text-xs font-medium text-slate-300 transition-colors flex items-center gap-1.5"
+              onClick={loadMyChannels}
+              className="p-2.5 rounded-xl border border-white/10 bg-[#161d2b]/70 hover:bg-[#1a2333] text-slate-300 hover:text-white transition"
+              title="Refresh listings"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{showDemoListings ? "Show Empty State" : "Preview Sample Listings"}</span>
+              <RefreshCw size={15} />
             </button>
 
-            {/* + NEW LISTING Button (matches "+ NEW CHANNEL" from design) */}
             <Link
               href="/sell"
               className="px-5 py-2.5 rounded-xl bg-[#d4af37] hover:bg-[#c49e29] active:scale-[0.99] text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-amber-500/10 flex items-center gap-1.5"
@@ -164,144 +126,177 @@ export default function MyMarketPlacePage() {
           </div>
         </div>
 
-        {/* 3 Metrics Cards: ACTIVE, SOLD OUT, REJECTED */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* 1. ACTIVE */}
-          <div className="bg-[#111722]/90 border border-slate-800/80 rounded-xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-400 tracking-wider uppercase">
-                ACTIVE
-              </p>
-              <p className="text-2xl font-bold text-white mt-0.5">{activeCount}</p>
-            </div>
-          </div>
-
-          {/* 2. SOLD OUT */}
-          <div className="bg-[#111722]/90 border border-slate-800/80 rounded-xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="w-10 h-10 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
-              <Package className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-400 tracking-wider uppercase">
-                SOLD OUT
-              </p>
-              <p className="text-2xl font-bold text-white mt-0.5">{soldCount}</p>
-            </div>
-          </div>
-
-          {/* 3. REJECTED */}
-          <div className="bg-[#111722]/90 border border-slate-800/80 rounded-xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-              <XCircle className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-400 tracking-wider uppercase">
-                REJECTED
-              </p>
-              <p className="text-2xl font-bold text-white mt-0.5">{rejectedCount}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Filter Tabs Pill Bar (Active, Sold Out, Rejected) */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
-          <div className="inline-flex items-center gap-1 bg-[#111722]/90 border border-slate-800/80 p-1 rounded-xl w-fit">
-            {/* Active Tab */}
-            <button
-              type="button"
-              onClick={() => setActiveTab("Active")}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                activeTab === "Active"
-                  ? "bg-[#d4af37] text-slate-950 shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Active {activeCount}</span>
-            </button>
-
-            {/* Sold Out Tab */}
-            <button
-              type="button"
-              onClick={() => setActiveTab("Sold Out")}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                activeTab === "Sold Out"
-                  ? "bg-[#d4af37] text-slate-950 shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <Package className="w-3.5 h-3.5" />
-              <span>Sold Out {soldCount}</span>
-            </button>
-
-            {/* Rejected Tab */}
-            <button
-              type="button"
-              onClick={() => setActiveTab("Rejected")}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                activeTab === "Rejected"
-                  ? "bg-[#d4af37] text-slate-950 shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              <span>Rejected {rejectedCount}</span>
-            </button>
-          </div>
-
-          {/* Category Filter Pills (When items exist) */}
-          {showDemoListings && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs text-slate-400">
-              <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mr-1">
-                Category:
+        {/* 4 Status Metrics Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {/* 1. ACTIVE / PUBLISHED */}
+          <div
+            onClick={() => setActiveTab("active")}
+            className={`cursor-pointer rounded-2xl p-5 border transition-all ${
+              activeTab === "active"
+                ? "bg-emerald-950/20 border-emerald-500/50 shadow-md shadow-emerald-950/40"
+                : "bg-[#111722] border-white/[0.06] hover:border-emerald-500/30"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                PUBLISHED
               </span>
-              {["All", "Social Media Channels", "Houses & Properties", "Vehicles", "Electronics"].map(
-                (cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-2.5 py-1 rounded-lg border transition-all shrink-0 ${
-                      selectedCategory === cat
-                        ? "border-teal-500/50 bg-teal-500/10 text-teal-300 font-medium"
-                        : "border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                )
-              )}
+              <div className="grid size-8 place-items-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                <CheckCircle2 size={16} />
+              </div>
             </div>
-          )}
+            <p className="text-2xl font-extrabold text-white mt-2">{activeCount}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Live in public market</p>
+          </div>
+
+          {/* 2. PENDING REVIEW */}
+          <div
+            onClick={() => setActiveTab("pending")}
+            className={`cursor-pointer rounded-2xl p-5 border transition-all ${
+              activeTab === "pending"
+                ? "bg-amber-950/20 border-amber-500/50 shadow-md shadow-amber-950/40"
+                : "bg-[#111722] border-white/[0.06] hover:border-amber-500/30"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                PENDING REVIEW
+              </span>
+              <div className="grid size-8 place-items-center rounded-lg bg-amber-500/10 text-amber-400">
+                <Clock size={16} />
+              </div>
+            </div>
+            <p className="text-2xl font-extrabold text-white mt-2">{pendingCount}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Under admin review</p>
+          </div>
+
+          {/* 3. REJECTED / NEEDS REVISION */}
+          <div
+            onClick={() => setActiveTab("rejected")}
+            className={`cursor-pointer rounded-2xl p-5 border transition-all ${
+              activeTab === "rejected"
+                ? "bg-rose-950/20 border-rose-500/50 shadow-md shadow-rose-950/40"
+                : "bg-[#111722] border-white/[0.06] hover:border-rose-500/30"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-400">
+                REJECTED
+              </span>
+              <div className="grid size-8 place-items-center rounded-lg bg-rose-500/10 text-rose-400">
+                <XCircle size={16} />
+              </div>
+            </div>
+            <p className="text-2xl font-extrabold text-white mt-2">{rejectedCount}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Can edit &amp; resubmit</p>
+          </div>
+
+          {/* 4. SOLD OUT */}
+          <div
+            onClick={() => setActiveTab("sold")}
+            className={`cursor-pointer rounded-2xl p-5 border transition-all ${
+              activeTab === "sold"
+                ? "bg-sky-950/20 border-sky-500/50 shadow-md shadow-sky-950/40"
+                : "bg-[#111722] border-white/[0.06] hover:border-sky-500/30"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
+                SOLD OUT
+              </span>
+              <div className="grid size-8 place-items-center rounded-lg bg-sky-500/10 text-sky-400">
+                <Package size={16} />
+              </div>
+            </div>
+            <p className="text-2xl font-extrabold text-white mt-2">{soldCount}</p>
+            <p className="text-[10px] text-slate-400 mt-0.5">Completed transfers</p>
+          </div>
         </div>
 
-        {/* Main Content Area */}
-        <div className="bg-[#111722]/60 border border-slate-800/80 rounded-2xl p-8 md:p-12 min-h-[420px] flex flex-col items-center justify-center">
-          {!showDemoListings || filteredListings.length === 0 ? (
-            /* Empty State Container: Matching the reference image exactly */
-            <div className="text-center max-w-sm mx-auto space-y-4 py-6">
-              {/* Stacked Icon Badge */}
+        {/* Tab Filter Pills Bar */}
+        <div className="inline-flex items-center gap-1 bg-[#111722] border border-white/[0.08] p-1.5 rounded-xl flex-wrap">
+          <button
+            type="button"
+            onClick={() => setActiveTab("all")}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              activeTab === "all"
+                ? "bg-[#d4af37] text-slate-950 shadow-sm"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            All Listings ({totalCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("active")}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              activeTab === "active"
+                ? "bg-emerald-500 text-slate-950 shadow-sm"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Published ({activeCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("pending")}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              activeTab === "pending"
+                ? "bg-amber-400 text-slate-950 shadow-sm"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Pending Review ({pendingCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("rejected")}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              activeTab === "rejected"
+                ? "bg-rose-500 text-white shadow-sm"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Rejected ({rejectedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("sold")}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              activeTab === "sold"
+                ? "bg-sky-500 text-slate-950 shadow-sm"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            Sold Out ({soldCount})
+          </button>
+        </div>
+
+        {/* Channel Listings Grid */}
+        <div className="rounded-2xl border border-white/[0.08] bg-[#111722]/80 p-6 sm:p-8 min-h-[380px]">
+          {loading ? (
+            <div className="py-20 text-center text-xs text-slate-400">Loading your marketplace listings...</div>
+          ) : filteredChannels.length === 0 ? (
+            <div className="text-center max-w-sm mx-auto space-y-4 py-12">
               <div className="w-16 h-16 rounded-2xl bg-[#18202d] border border-slate-700/60 flex items-center justify-center text-slate-500 mx-auto shadow-inner">
                 <Layers className="w-8 h-8 stroke-[1.5]" />
               </div>
-
-              <div className="space-y-1.5">
-                <h3 className="text-base md:text-lg font-bold text-slate-100">
-                  No {activeTab.toLowerCase()} listings yet
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-white">
+                  No {activeTab === "all" ? "" : activeTab} listings found
                 </h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  List your first item and start selling across Ethiopia on Hulu Marketplace.
+                <p className="text-xs text-slate-400">
+                  {activeTab === "pending"
+                    ? "You don't have any channel listings currently under review."
+                    : activeTab === "rejected"
+                    ? "Great news! None of your channel submissions have been rejected."
+                    : "Create a channel listing to start selling to verified buyers on Hulu Market."}
                 </p>
               </div>
-
-              {/* Bottom Create Button matching reference image */}
               <div className="pt-2">
                 <Link
                   href="/sell"
-                  className="inline-flex items-center gap-1.5 px-6 py-3 rounded-xl bg-[#d4af37] hover:bg-[#c49e29] active:scale-[0.99] text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-lg shadow-amber-500/10"
+                  className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-[#d4af37] hover:bg-[#c49e29] text-slate-950 font-bold text-xs uppercase tracking-wider transition-all shadow-md shadow-amber-500/10"
                 >
                   <Plus className="w-4 h-4 stroke-[2.5]" />
                   <span>CREATE LISTING</span>
@@ -309,51 +304,118 @@ export default function MyMarketPlacePage() {
               </div>
             </div>
           ) : (
-            /* Populated Marketplace Listings Grid */
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredListings.map((item) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredChannels.map((item) => (
                 <div
                   key={item.id}
-                  className="p-5 rounded-xl bg-[#0c111a] border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between gap-4 group"
+                  className="p-5 rounded-2xl bg-[#0c111a] border border-white/[0.06] hover:border-white/10 transition flex flex-col justify-between gap-4 shadow-sm"
                 >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20">
-                        {item.category}
-                      </span>
+                  <div className="space-y-3">
+                    {/* Header Row: Platform, Category & Status Badge */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] px-2.5 py-0.5 rounded-full font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                          {item.platform}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {item.category}
+                        </span>
+                      </div>
+
                       <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
-                          item.status === "Active"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : item.status === "Sold Out"
-                            ? "bg-sky-500/10 text-sky-400 border-sky-500/20"
-                            : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                        className={`text-[10px] px-2.5 py-0.5 rounded-full font-extrabold uppercase tracking-wider border ${
+                          item.status === "active"
+                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                            : item.status === "pending"
+                            ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                            : item.status === "sold"
+                            ? "bg-sky-500/15 text-sky-300 border-sky-500/30"
+                            : "bg-rose-500/15 text-rose-300 border-rose-500/30"
                         }`}
                       >
-                        {item.status}
+                        {item.status === "active" ? "✓ Published" : item.status === "pending" ? "• Pending Review" : item.status === "sold" ? "Sold Out" : "✕ Rejected"}
                       </span>
                     </div>
 
-                    <h4 className="text-sm font-bold text-slate-100 group-hover:text-amber-400 transition-colors">
-                      {item.title}
-                    </h4>
-                    <p className="text-xs text-slate-400">{item.subscribers}</p>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between">
+                    {/* Displayed Channel Name */}
                     <div>
-                      <p className="text-[10px] uppercase text-slate-500 tracking-wider">
-                        Listed Price
-                      </p>
-                      <p className="text-base font-bold text-white">
-                        {item.price.toLocaleString()} ETB
+                      <h4 className="text-base font-extrabold text-white">
+                        {item.name}
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {item.subscribers} followers / subscribers &bull; {item.views_or_likes || "Active"}
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3 text-xs text-slate-400">
-                      <span>{item.views} views</span>
-                      <span>•</span>
-                      <span>{item.inquiries} inquiries</span>
+                    {/* Description preview */}
+                    {item.description && (
+                      <p className="text-xs text-slate-300 bg-white/[0.02] border border-white/[0.04] p-2.5 rounded-xl line-clamp-2 leading-relaxed">
+                        {item.description}
+                      </p>
+                    )}
+
+                    {/* Rejection Notice Banner with Edit & Resubmit Button */}
+                    {item.status === "rejected" && (
+                      <div className="rounded-xl border border-rose-500/40 bg-rose-950/30 p-3 space-y-2">
+                        <div className="flex items-start gap-2 text-rose-300 text-xs">
+                          <AlertCircle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold text-rose-200">Rejection Reason: </span>
+                            <span>{item.rejection_reason || "Verification could not be confirmed with the provided details."}</span>
+                          </div>
+                        </div>
+
+                        <Link
+                          href={`/sell?editChannelId=${item.id}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-400 transition shadow-sm"
+                        >
+                          <Edit3 size={13} />
+                          <span>Edit &amp; Resubmit for Review</span>
+                        </Link>
+                      </div>
+                    )}
+
+                    {/* Pending Review Notice */}
+                    {item.status === "pending" && (
+                      <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 p-2.5 text-xs text-amber-300">
+                        <Clock size={14} className="shrink-0 text-amber-400" />
+                        <span>Our review officers are inspecting your dashboard statistics. Review turnaround is within 2-4 hours.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bottom Footer: Price & Link */}
+                  <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <p className="text-[10px] uppercase text-slate-500 tracking-wider">
+                        Asking Price
+                      </p>
+                      <p className="text-base font-extrabold text-amber-400">
+                        {Number(item.price).toLocaleString()} ETB
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {item.link_url && (
+                        <a
+                          href={item.link_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-teal-400 hover:text-teal-300 underline"
+                        >
+                          <span>Channel Link</span>
+                          <ExternalLink size={12} />
+                        </a>
+                      )}
+
+                      {item.status === "active" && (
+                        <Link
+                          href="/social-media"
+                          className="rounded-lg bg-teal-500/15 border border-teal-500/30 px-3 py-1 text-xs font-semibold text-teal-300 hover:bg-teal-500/25 transition"
+                        >
+                          View in Market
+                        </Link>
+                      )}
                     </div>
                   </div>
                 </div>

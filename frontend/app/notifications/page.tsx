@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth";
 import {
   ArrowDownLeft,
   ArrowRight,
@@ -34,63 +35,34 @@ interface NotificationItem {
 }
 
 export default function NotificationsPage() {
+  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "escrow" | "wallet">("all");
-  const [showDemoNotifications, setShowDemoNotifications] = useState(true);
+  const [showDemoNotifications, setShowDemoNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: "notif-1",
-      type: "escrow",
-      title: "Escrow Payment Released",
-      message: "Payment of 4,500 ETB for Telegram channel @EthioCryptoNews has been credited to your available balance.",
-      timestamp: "10 minutes ago",
-      read: false,
-      actionUrl: "/transactions",
-      actionLabel: "View Receipt",
-    },
-    {
-      id: "notif-2",
-      type: "wallet",
-      title: "CBE Deposit Confirmed",
-      message: "Your deposit of 1,500 ETB via Commercial Bank of Ethiopia (Txn #CBE-FT243198002) has been approved.",
-      timestamp: "2 hours ago",
-      read: false,
-      actionUrl: "/deposit",
-      actionLabel: "Wallet Balance",
-    },
-    {
-      id: "notif-3",
-      type: "marketplace",
-      title: "New Buyer Inquiry",
-      message: "A verified buyer inquired about your listing 'Luxury 3-Bedroom Apartment (Bole Atlas)'.",
-      timestamp: "Yesterday at 4:30 PM",
-      read: true,
-      actionUrl: "/inbox",
-      actionLabel: "Open Chat",
-    },
-    {
-      id: "notif-4",
-      type: "wallet",
-      title: "Withdrawal Processing",
-      message: "Your withdrawal request of 1,840 ETB to Telebirr (0929075365) is being reviewed by escrow officers.",
-      timestamp: "Nov 12, 2026",
-      read: true,
-      actionUrl: "/withdraw",
-      actionLabel: "Withdraw Status",
-    },
-    {
-      id: "notif-5",
-      type: "system",
-      title: "Welcome to Hulu Market",
-      message: "Your account has been secured with Hulu Escrow Protection. You can now list and purchase items safely.",
-      timestamp: "Nov 10, 2026",
-      read: true,
-      actionUrl: "/profile",
-      actionLabel: "View Profile",
-    },
-  ]);
+  useEffect(() => {
+    if (!user?.id) return;
+    fetch(`/api/user/notifications?userId=${user.id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.notifications) && data.notifications.length > 0) {
+          const mapped: NotificationItem[] = data.notifications.map((n: any) => ({
+            id: `notif-${n.id}`,
+            type: n.type || "system",
+            title: n.title,
+            message: n.message,
+            timestamp: new Date(n.created_at).toLocaleString(),
+            read: !!n.is_read,
+            actionUrl: n.action_url || "/inbox",
+            actionLabel: n.action_label || "View Details",
+          }));
+          setNotifications(mapped);
+        }
+      })
+      .catch(() => {});
+  }, [user?.id]);
 
-  const displayedList = showDemoNotifications ? notifications : [];
+  const displayedList = notifications;
 
   const unreadCount = displayedList.filter((n) => !n.read).length;
 

@@ -67,6 +67,7 @@ interface UserRecord {
 
 interface ChannelRecord {
   id: number;
+  seller_id?: number;
   name: string;
   platform: "YouTube" | "Instagram" | "TikTok" | "Telegram" | "Facebook";
   category: string;
@@ -74,6 +75,12 @@ interface ChannelRecord {
   views_or_likes: string;
   price: number;
   link_url?: string;
+  screenshot_url?: string;
+  supporting_screenshots?: string;
+  description?: string;
+  seller_username?: string;
+  seller_phone?: string;
+  rejection_reason?: string;
   status: "active" | "sold" | "pending" | "rejected";
   created_at: string;
 }
@@ -413,19 +420,27 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleUpdateChannelStatus = async (channelId: number, status: string) => {
+  const handleUpdateChannelStatus = async (channelId: number, status: string, rejectionReason?: string) => {
     try {
       const res = await fetchBackend(`admin/channels/${channelId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, rejectionReason }),
       });
       const data = await res.json();
       if (data.success) {
-        setFeedback({ type: "success", text: `Channel #${channelId} marked as ${status}` });
+        setFeedback({
+          type: "success",
+          text: status === "active" ? `Channel #${channelId} approved & published to marketplace!` : `Channel #${channelId} marked as rejected.`,
+        });
         setChannelsList((prev) =>
-          prev.map((c) => (c.id === channelId ? { ...c, status: status as ChannelRecord["status"] } : c))
+          prev.map((c) =>
+            c.id === channelId
+              ? { ...c, status: status as ChannelRecord["status"], rejection_reason: rejectionReason }
+              : c
+          )
         );
+        loadAdminData();
       }
     } catch {
       setFeedback({ type: "error", text: "Failed to update channel" });
@@ -705,52 +720,113 @@ export default function AdminDashboardPage() {
             </div>
 
             {pendingChannels.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#0b0f17] text-slate-400 uppercase tracking-wider text-[10px]">
-                    <tr>
-                      <th className="py-3 px-4">Channel Name</th>
-                      <th className="py-3 px-4">Platform</th>
-                      <th className="py-3 px-4">Subscribers</th>
-                      <th className="py-3 px-4">Price</th>
-                      <th className="py-3 px-4">Link</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.04]">
-                    {pendingChannels.map((ch) => (
-                      <tr key={ch.id} className="hover:bg-white/[0.02]">
-                        <td className="py-3.5 px-4 font-bold text-white">{ch.name}</td>
-                        <td className="py-3.5 px-4 text-cyan-400 font-semibold">{ch.platform}</td>
-                        <td className="py-3.5 px-4 text-slate-300">{ch.subscribers}</td>
-                        <td className="py-3.5 px-4 font-bold text-amber-300">{Number(ch.price).toLocaleString()} ETB</td>
-                        <td className="py-3.5 px-4">
-                          {ch.link_url ? (
-                            <a href={ch.link_url} target="_blank" rel="noopener noreferrer" className="text-teal-400 underline">
-                              View Link
-                            </a>
-                          ) : (
-                            <span className="text-slate-500">—</span>
+              <div className="space-y-4">
+                {pendingChannels.map((ch) => (
+                  <div key={ch.id} className="rounded-2xl border border-white/[0.08] bg-[#0c1017] p-5 space-y-4 shadow-inner">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                      {/* Left: Channel Information */}
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-amber-400">Listing #{ch.id}</span>
+                          <h4 className="text-base font-extrabold text-white">{ch.name}</h4>
+                          <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 text-xs font-bold text-cyan-400">
+                            {ch.platform}
+                          </span>
+                          <span className="rounded-full bg-purple-500/10 border border-purple-500/30 px-2.5 py-0.5 text-xs font-semibold text-purple-300">
+                            {ch.category}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-4 text-xs flex-wrap">
+                          <span className="text-slate-300">
+                            Subscribers/Followers: <strong className="text-white">{ch.subscribers}</strong>
+                          </span>
+                          {ch.views_or_likes && ch.views_or_likes !== "0" && (
+                            <span className="text-slate-400">
+                              Views/Engagement: <strong className="text-slate-300">{ch.views_or_likes}</strong>
+                            </span>
                           )}
-                        </td>
-                        <td className="py-3.5 px-4 text-right space-x-2">
-                          <button
-                            onClick={() => handleUpdateChannelStatus(ch.id, "active")}
-                            className="rounded-lg bg-emerald-500 px-3 py-1 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
+                          <span className="text-emerald-400 font-bold text-sm">
+                            {Number(ch.price).toLocaleString()} ETB
+                          </span>
+                        </div>
+
+                        {ch.description && (
+                          <p className="text-xs text-slate-300 bg-white/[0.02] border border-white/[0.04] p-2.5 rounded-xl leading-relaxed">
+                            {ch.description}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-4 text-[11px] text-slate-400 pt-1 flex-wrap">
+                          <span>Seller: <strong className="text-slate-200">{ch.seller_username || `ID #${ch.seller_id}`}</strong></span>
+                          <span>Phone: <strong className="text-slate-200 font-mono">{ch.seller_phone || "—"}</strong></span>
+                          <span>Submitted: {new Date(ch.created_at).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Right: Dashboard Screenshot & Channel Link */}
+                      <div className="flex flex-col items-center md:items-end gap-2 shrink-0">
+                        {ch.screenshot_url ? (
+                          <a
+                            href={`http://localhost:4001${ch.screenshot_url}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Click to inspect full resolution dashboard screenshot"
+                            className="group block"
                           >
-                            Approve Listing
-                          </button>
-                          <button
-                            onClick={() => handleUpdateChannelStatus(ch.id, "rejected")}
-                            className="rounded-lg bg-rose-500/20 border border-rose-500/40 px-3 py-1 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition"
+                            <img
+                              src={`http://localhost:4001${ch.screenshot_url}`}
+                              alt="Dashboard screenshot"
+                              className="h-24 w-36 rounded-xl object-cover border border-teal-500/30 group-hover:border-teal-400 transition cursor-pointer shadow-lg"
+                            />
+                            <p className="text-[10px] text-teal-400 text-center mt-1 font-semibold group-hover:underline">
+                              Inspect Dashboard Proof ↗
+                            </p>
+                          </a>
+                        ) : (
+                          <div className="h-20 w-32 rounded-xl bg-slate-900 border border-dashed border-slate-700 grid place-items-center text-[10px] text-slate-500 text-center p-2">
+                            No screenshot uploaded
+                          </div>
+                        )}
+
+                        {ch.link_url && (
+                          <a
+                            href={ch.link_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/20 transition"
                           >
-                            Reject
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            <span>Open Channel Link</span>
+                            <span className="text-[10px]">↗</span>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-2.5 pt-2 border-t border-white/[0.04]">
+                      <button
+                        onClick={() => handleUpdateChannelStatus(ch.id, "active")}
+                        className="flex-1 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition shadow-md shadow-emerald-500/20"
+                      >
+                        ✓ Approve &amp; Publish to Marketplace
+                      </button>
+                      <button
+                        onClick={() => {
+                          const reason = prompt(
+                            `Enter rejection reason for "${ch.name}" to notify the seller:`,
+                            "Channel statistics or followers could not be verified from the provided screenshot. Please upload an uncropped analytics dashboard."
+                          );
+                          if (reason === null) return;
+                          handleUpdateChannelStatus(ch.id, "rejected", reason);
+                        }}
+                        className="rounded-xl bg-rose-500/20 border border-rose-500/40 px-4 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition"
+                      >
+                        Reject Listing (With Reason)
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-slate-500">

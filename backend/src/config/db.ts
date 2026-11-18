@@ -80,13 +80,29 @@ export async function initDatabase(): Promise<boolean> {
         views_or_likes VARCHAR(50) NOT NULL DEFAULT '0',
         price DECIMAL(15, 2) NOT NULL,
         link_url VARCHAR(500),
-        status ENUM('active', 'pending', 'sold', 'rejected') NOT NULL DEFAULT 'active',
+        screenshot_url VARCHAR(500) NULL,
+        supporting_screenshots TEXT NULL,
+        description TEXT NULL,
+        seller_username VARCHAR(150) NULL,
+        seller_phone VARCHAR(50) NULL,
+        rejection_reason TEXT NULL,
+        status ENUM('active', 'pending', 'sold', 'rejected') NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_channels_platform (platform),
         INDEX idx_channels_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Migrate channels columns if table already existed
+    try {
+      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS screenshot_url VARCHAR(500) NULL`);
+      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS supporting_screenshots TEXT NULL`);
+      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS description TEXT NULL`);
+      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS seller_username VARCHAR(150) NULL`);
+      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS seller_phone VARCHAR(50) NULL`);
+      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS rejection_reason TEXT NULL`);
+    } catch { /* columns already exist */ }
 
     // 3. Transactions & Escrow table
     await conn.query(`
@@ -167,6 +183,22 @@ export async function initDatabase(): Promise<boolean> {
       await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS message_type ENUM('text','voice','image') NOT NULL DEFAULT 'text'`);
       await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS attachment_url VARCHAR(500) NULL`);
     } catch { /* columns already exist */ }
+
+    // 6. User Notifications table
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        type VARCHAR(50) NOT NULL DEFAULT 'system',
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        action_url VARCHAR(255) NULL,
+        action_label VARCHAR(100) NULL,
+        is_read BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_notif_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
 
     // Seed default admin account if not already present
     const [existingAdmins]: [any[], any] = await conn.query(

@@ -195,12 +195,24 @@ adminRouter.post("/channels", async (req: Request, res: Response): Promise<void>
 
 /**
  * PATCH /api/admin/channels/:id
- * Updates channel status or price.
+ * Updates channel status ('active' / 'rejected'), rejection_reason, or price.
  */
 adminRouter.patch("/channels/:id", async (req: Request, res: Response): Promise<void> => {
   try {
     const channelId = parseInt(req.params.id as string, 10);
-    const { status, price } = req.body;
+    const { status, price, rejectionReason } = req.body;
+
+    const [channelRows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM channels WHERE id = ? LIMIT 1",
+      [channelId]
+    );
+
+    if (channelRows.length === 0) {
+      res.status(404).json({ success: false, error: "Channel not found" });
+      return;
+    }
+
+    const channel = channelRows[0];
 
     const updates: string[] = [];
     const params: (string | number)[] = [];
@@ -208,7 +220,15 @@ adminRouter.patch("/channels/:id", async (req: Request, res: Response): Promise<
     if (status) {
       updates.push("status = ?");
       params.push(status);
+
+      if (status === "active") {
+        updates.push("rejection_reason = NULL");
+      } else if (status === "rejected" && rejectionReason) {
+        updates.push("rejection_reason = ?");
+        params.push(rejectionReason);
+      }
     }
+
     if (price !== undefined) {
       updates.push("price = ?");
       params.push(Number(price));
@@ -222,7 +242,33 @@ adminRouter.patch("/channels/:id", async (req: Request, res: Response): Promise<
     params.push(channelId);
     await pool.query(`UPDATE channels SET ${updates.join(", ")} WHERE id = ?`, params);
 
-    res.json({ success: true, message: `Channel #${channelId} updated successfully` });
+    // Notify seller if status changed
+    if (status && channel.seller_id) {
+      try {
+        if (status === "active") {
+          await pool.query(
+            `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+             VALUES (?, 'marketplace', 'Channel Listing Approved & Published! 🎉', ?, '/my-marketplace', 'View Listing')`,
+            [
+              channel.seller_id,
+              `Congratulations! Your channel listing "${channel.name}" (${channel.platform}) has been approved by the administrator and is now live in the marketplace.`,
+            ]
+          );
+        } else if (status === "rejected") {
+          const reasonText = rejectionReason ? `Reason: ${rejectionReason}` : "Please check your listing details and ensure statistics are verifiable.";
+          await pool.query(
+            `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+             VALUES (?, 'marketplace', 'Channel Listing Needs Revision', ?, '/my-marketplace', 'Review & Resubmit')`,
+            [
+              channel.seller_id,
+              `Your channel listing "${channel.name}" was not approved. ${reasonText} You can correct the information and resubmit it for review.`,
+            ]
+          );
+        }
+      } catch { /* ignore notification failure */ }
+    }
+
+    res.json({ success: true, message: `Channel #${channelId} status set to ${status || 'updated'}` });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

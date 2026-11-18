@@ -121,3 +121,38 @@ userRouter.get("/profile", async (req: Request, res: Response): Promise<void> =>
     res.status(500).json({ success: false, error: (error as Error).message });
   }
 });
+
+/**
+ * GET /api/user/notifications
+ */
+userRouter.get("/notifications", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    if (!userId) {
+      res.json({ success: true, notifications: [] });
+      return;
+    }
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 50",
+      [userId]
+    );
+
+    res.json({ success: true, notifications: rows });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * PATCH /api/user/notifications/:id/read
+ */
+userRouter.patch("/notifications/:id/read", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const notifId = parseInt(req.params.id as string, 10);
+    await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ?", [notifId]);
+    res.json({ success: true });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
