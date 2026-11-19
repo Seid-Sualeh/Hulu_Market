@@ -30,7 +30,7 @@ interface FavoriteItem {
   categorySlug: string;
   platform?: "telegram" | "youtube" | "tiktok" | "instagram" | "facebook" | "other";
   spec: string;
-  price: number;
+  price?: number | string | null;
   location?: string;
   savedDate: string;
   verified: boolean;
@@ -333,7 +333,7 @@ export default function FavoritesPage() {
                         Asking Price
                       </span>
                       <span className="text-lg font-bold text-white">
-                        {item.price.toLocaleString()} ETB
+                        {item.price != null ? Number(item.price).toLocaleString() : "—"} ETB
                       </span>
                     </div>
 
