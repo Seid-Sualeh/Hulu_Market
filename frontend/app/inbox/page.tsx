@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  AlertCircle,
+  ArrowRight,
+  Bot,
   CheckCircle2,
+  ExternalLink,
+  Eye,
   Image as ImageIcon,
   Inbox as InboxIcon,
   Lock,
@@ -12,10 +17,13 @@ import {
   Pin,
   Search,
   Send,
+  Shield,
   ShieldCheck,
   ShoppingBag,
   Sparkles,
   Square,
+  User,
+  Volume2,
   X,
   XCircle,
 } from "lucide-react";
@@ -538,194 +546,263 @@ export default function InboxPage() {
 
       {/* ===== Escrow 3-Way Chat Modal ===== */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-          <div className="flex h-[40rem] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-2 sm:p-4 backdrop-blur-md">
+          <div className="flex h-[96vh] max-h-[860px] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c1017] shadow-2xl shadow-black/60">
 
-            {/* Modal Header */}
-            <div className="border-b border-white/[0.08] bg-[#0c1017] p-4 shrink-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-xs font-bold text-amber-400">Trade #{selectedOrder.id}</span>
-                    <h3 className="text-sm font-bold text-white">{selectedOrder.channelName}</h3>
-                    {selectedOrder.isClosed && (
-                      <span className="flex items-center gap-1 rounded-full bg-slate-500/20 px-2 py-0.5 text-[9px] font-bold text-slate-400">
-                        <Lock size={9} /> Closed
-                      </span>
-                    )}
+            {/* ── Compact Header ── */}
+            <div className="shrink-0 bg-[#111722] border-b border-white/[0.08]">
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex flex-col items-center justify-center size-8 rounded-lg bg-amber-400/10 border border-amber-400/20 shrink-0">
+                    <span className="font-mono text-[9px] font-bold text-amber-400 leading-none">ESC</span>
+                    <span className="font-mono text-[9px] font-bold text-amber-300 leading-none">#{selectedOrder.id}</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Amount: <span className="font-bold text-amber-300">{selectedOrder.price}</span> &bull; Status:{" "}
-                    <span className="font-bold text-teal-400 uppercase">
-                      {selectedOrder.isClosed ? "closed" : selectedOrder.status}
-                    </span>
-                  </p>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-white truncate">{selectedOrder.channelName}</h3>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold text-amber-300">{selectedOrder.price}</span>
+                      <span className="text-slate-600">·</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wide ${selectedOrder.isClosed ? "text-slate-400" : selectedOrder.status === "processing" ? "text-teal-400" : "text-emerald-400"}`}>
+                        {selectedOrder.isClosed ? "CLOSED" : selectedOrder.status}
+                      </span>
+                      <span className="text-slate-600">·</span>
+                      <span className="text-[10px] text-slate-400">{selectedOrder.platform}</span>
+                    </div>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelectedOrder(null)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-white ml-2 shrink-0"
+                  className="shrink-0 grid size-7 place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
 
+              {/* Escrow / closed status strip */}
               {selectedOrder.isClosed ? (
-                <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-slate-500/10 border border-slate-500/20 px-2.5 py-1.5 text-[11px] text-slate-300">
-                  <Lock size={14} className="text-slate-400 shrink-0" />
-                  <span>This trade is closed. For further assistance, use the Chat with Admin feature.</span>
+                <div className="mx-3 mb-3 flex items-center gap-2 rounded-lg bg-slate-500/10 border border-slate-500/20 px-3 py-2 text-[11px] text-slate-400">
+                  <Lock size={12} className="shrink-0" />
+                  <span>Trade closed · use <strong>Chat with Admin</strong> for further help</span>
                 </div>
               ) : (
-                <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-teal-500/10 border border-teal-500/20 px-2.5 py-1.5 text-[11px] text-teal-300">
-                  <ShieldCheck size={14} className="text-teal-400 shrink-0" />
-                  <span>Funds held in escrow. Admin supervises ownership transfer.</span>
+                <div className="mx-3 mb-3 flex items-center gap-2 rounded-lg bg-teal-500/10 border border-teal-500/20 px-3 py-2 text-[11px] text-teal-300">
+                  <ShieldCheck size={12} className="shrink-0 text-teal-400" />
+                  <span>Funds locked in escrow · admin supervises ownership transfer</span>
                 </div>
               )}
+
+              {/* Participants bar */}
+              <div className="flex items-center gap-2 px-4 pb-3">
+                <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5">
+                  <span className="size-1.5 rounded-full bg-emerald-400 inline-block" />
+                  <span className="text-[10px] font-semibold text-emerald-400">Buyer</span>
+                  {selectedOrder.buyerConfirmed && <CheckCircle2 size={9} className="text-emerald-400" />}
+                </div>
+                <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5">
+                  <span className="size-1.5 rounded-full bg-cyan-400 inline-block" />
+                  <span className="text-[10px] font-semibold text-cyan-400">Seller</span>
+                  {selectedOrder.sellerConfirmed && <CheckCircle2 size={9} className="text-cyan-400" />}
+                </div>
+                <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5">
+                  <span className="size-1.5 rounded-full bg-amber-400 inline-block" />
+                  <span className="text-[10px] font-semibold text-amber-400">Admin</span>
+                </div>
+              </div>
             </div>
 
-            {/* Mark as Complete Banner — shown to buyer when processing and not yet confirmed */}
+            {/* ── Action banners (compact, inline) ── */}
+
+            {/* Buyer: needs to confirm */}
             {!selectedOrder.isClosed && selectedOrder.status === "processing" && isBuyer(selectedOrder) && !selectedOrder.buyerConfirmed && (
-              <div className="border-b border-amber-500/20 bg-amber-950/20 px-4 py-3 shrink-0">
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 text-xs text-slate-300">
-                    <span className="font-bold text-amber-300">Admin instruction: </span>
-                    If you have successfully received the ownership of your purchased channel and verified everything, please click the{" "}
-                    <span className="font-bold text-white">Mark as Complete</span> button.
-                  </div>
-                  <button
-                    type="button"
-                    disabled={confirmingCompletion}
-                    onClick={handleBuyerConfirm}
-                    className="shrink-0 flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-md hover:bg-emerald-400 active:scale-95 disabled:opacity-60 transition"
-                  >
-                    <CheckCircle2 size={14} />
-                    {confirmingCompletion ? "Confirming..." : "Mark as Complete"}
-                  </button>
-                </div>
+              <div className="shrink-0 flex items-center gap-3 border-b border-emerald-500/20 bg-emerald-950/30 px-4 py-2.5">
+                <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                <p className="flex-1 text-[11px] text-slate-300">
+                  <span className="font-bold text-emerald-400">Admin: </span>
+                  Received the channel? Click to confirm.
+                </p>
+                <button
+                  type="button"
+                  disabled={confirmingCompletion}
+                  onClick={handleBuyerConfirm}
+                  className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-emerald-400 active:scale-95 disabled:opacity-60 transition"
+                >
+                  <CheckCircle2 size={12} />
+                  {confirmingCompletion ? "Confirming..." : "Mark as Complete"}
+                </button>
               </div>
             )}
 
-            {/* Buyer already confirmed — show status */}
+            {/* Buyer: already confirmed */}
             {!selectedOrder.isClosed && selectedOrder.status === "processing" && isBuyer(selectedOrder) && selectedOrder.buyerConfirmed && (
-              <div className="border-b border-emerald-500/20 bg-emerald-950/20 px-4 py-2.5 shrink-0">
-                <div className="flex items-center gap-2 text-xs text-emerald-400">
-                  <CheckCircle2 size={14} />
-                  <span>
-                    You have confirmed receipt.{" "}
-                    {selectedOrder.sellerConfirmed
-                      ? "Seller also confirmed ✓ — Waiting for admin to finalize."
-                      : "Waiting for seller confirmation..."}
-                  </span>
-                </div>
+              <div className="shrink-0 flex items-center gap-2 border-b border-emerald-500/20 bg-emerald-950/20 px-4 py-2 text-[11px] text-emerald-400">
+                <CheckCircle2 size={13} className="shrink-0" />
+                <span>
+                  You have confirmed receipt.{" "}
+                  {selectedOrder.sellerConfirmed
+                    ? "Seller also confirmed ✓ — Waiting for admin to finalize."
+                    : "Waiting for seller confirmation..."}
+                </span>
               </div>
             )}
 
             {/* Seller confirmation banner — shown to seller when processing and not yet confirmed */}
             {!selectedOrder.isClosed && selectedOrder.status === "processing" && isSeller(selectedOrder) && !selectedOrder.sellerConfirmed && (
-              <div className="border-b border-cyan-500/20 bg-cyan-950/20 px-4 py-3 shrink-0">
-                <div className="flex items-start gap-3">
-                  <div className="flex-1 text-xs text-slate-300">
-                    <span className="font-bold text-cyan-300">Seller Transfer Confirmation: </span>
-                    If you have successfully transferred channel credentials and ownership evidence to the buyer, please click the{" "}
-                    <span className="font-bold text-white">Confirm Transfer Complete</span> button.
-                  </div>
+              <div className="shrink-0 flex items-center gap-3 border-b border-cyan-500/20 bg-cyan-950/30 px-4 py-2.5">
+                <CheckCircle2 size={14} className="text-cyan-400 shrink-0" />
+                <p className="flex-1 text-[11px] text-slate-300">
+                  <span className="font-bold text-cyan-400">Transfer: </span>
+                  Transferred channel credentials? Click to confirm.
+                </p>
                   <button
                     type="button"
                     disabled={confirmingCompletion}
                     onClick={handleSellerConfirm}
-                    className="shrink-0 flex items-center gap-1.5 rounded-xl bg-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-md hover:bg-cyan-400 active:scale-95 disabled:opacity-60 transition"
+                    className="shrink-0 flex items-center gap-1 rounded-lg bg-cyan-500 px-3 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-cyan-400 active:scale-95 disabled:opacity-60 transition"
                   >
-                    <CheckCircle2 size={14} />
-                    {confirmingCompletion ? "Confirming..." : "Confirm Transfer Complete"}
+                    <CheckCircle2 size={12} />
+                    {confirmingCompletion ? "Confirming..." : "Confirm Transfer"}
                   </button>
-                </div>
               </div>
             )}
 
-            {/* Seller already confirmed — show status */}
+            {/* Seller already confirmed */}
             {!selectedOrder.isClosed && selectedOrder.status === "processing" && isSeller(selectedOrder) && selectedOrder.sellerConfirmed && (
-              <div className="border-b border-emerald-500/20 bg-emerald-950/20 px-4 py-2.5 shrink-0">
-                <div className="flex items-center gap-2 text-xs text-emerald-400">
-                  <CheckCircle2 size={14} />
-                  <span>
-                    You have confirmed transfer completion.{" "}
-                    {selectedOrder.buyerConfirmed
-                      ? "Buyer also confirmed ✓ — Administrator will finalize and release funds."
-                      : "Waiting for buyer to verify and confirm receipt..."}
-                  </span>
-                </div>
+              <div className="shrink-0 flex items-center gap-2 border-b border-emerald-500/20 bg-emerald-950/20 px-4 py-2 text-[11px] text-emerald-400">
+                <CheckCircle2 size={13} className="shrink-0" />
+                <span>
+                  You confirmed transfer.{" "}
+                  {selectedOrder.buyerConfirmed
+                    ? "Buyer confirmed ✓ — Admin will finalize."
+                    : "Waiting for buyer to verify..."}
+                </span>
               </div>
             )}
 
-            {/* Both Confirmed Status Banner */}
+            {/* Both confirmed */}
             {!selectedOrder.isClosed && selectedOrder.buyerConfirmed && selectedOrder.sellerConfirmed && (
-              <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2.5 shrink-0">
-                <div className="flex items-center gap-2 text-xs text-amber-300 font-semibold">
-                  <Sparkles size={14} className="text-amber-400" />
-                  <span>Both parties confirmed! The administrator will now finalize and close this trade.</span>
-                </div>
+              <div className="shrink-0 flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-[11px] text-amber-300 font-semibold">
+                <Sparkles size={13} className="text-amber-400 shrink-0" />
+                <span>Both parties confirmed! Admin will finalize and close this trade.</span>
               </div>
             )}
 
-            {/* Confirmation status badges */}
-            {!selectedOrder.isClosed && (selectedOrder.buyerConfirmed || selectedOrder.sellerConfirmed) && (
-              <div className="flex gap-2 px-4 py-2 border-b border-white/[0.06] bg-[#0a1420] shrink-0">
-                <span className={`text-[10px] rounded-full px-2 py-0.5 font-semibold ${selectedOrder.buyerConfirmed ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/10 text-slate-500"}`}>
-                  Buyer: {selectedOrder.buyerConfirmed ? "✓ Confirmed" : "Pending"}
-                </span>
-                <span className={`text-[10px] rounded-full px-2 py-0.5 font-semibold ${selectedOrder.sellerConfirmed ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/10 text-slate-500"}`}>
-                  Seller: {selectedOrder.sellerConfirmed ? "✓ Confirmed" : "Pending"}
-                </span>
-              </div>
-            )}
-
-            {/* Messages */}
-            <div className="flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
+            {/* Messages area */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
               {loadingMessages ? (
-                <div className="py-12 text-center text-xs text-slate-500">Loading trade messages...</div>
+                <div className="flex h-full items-center justify-center">
+                  <p className="text-xs text-slate-500 animate-pulse">Loading trade messages...</p>
+                </div>
               ) : orderMessages.length === 0 ? (
-                <div className="py-12 text-center text-xs text-slate-500">No messages yet. Start the conversation!</div>
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                  <MessageSquare size={28} className="text-slate-700" />
+                  <p className="text-xs text-slate-500">No messages yet. Start the conversation!</p>
+                </div>
               ) : (
                 orderMessages.map((msg) => {
                   const isMine = msg.sender_name === user?.name;
-                  const isAdmin = msg.sender_role === "admin";
+                  const isBot  = msg.sender_role === "admin" && msg.sender_name?.toLowerCase().includes("bot");
+                  const isAdminMsg = msg.sender_role === "admin" && !isBot;
+
+                  /* ── Bot / System message ── */
+                  if (isBot) {
+                    return (
+                      <div key={msg.id} className="flex justify-center px-2">
+                        <div className="flex items-start gap-2 max-w-[90%] rounded-xl bg-[#111722] border border-amber-500/20 px-3 py-2.5 text-[11px] text-amber-200/80">
+                          <ShieldCheck size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="block text-[9px] font-bold text-amber-400 mb-0.5">{msg.sender_name}</span>
+                            <p className="leading-relaxed">{msg.message}</p>
+                            <span className="block text-right text-[9px] text-amber-400/50 mt-1">
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  /* ── Admin mediator message ── */
+                  if (isAdminMsg) {
+                    return (
+                      <div key={msg.id} className="flex justify-start gap-2">
+                        <div className="size-7 shrink-0 rounded-full bg-amber-400/10 border border-amber-400/30 grid place-items-center">
+                          <ShieldCheck size={13} className="text-amber-400" />
+                        </div>
+                        <div className="max-w-[80%]">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[9px] font-bold text-amber-400">Admin Mediator</span>
+                            <span className="text-[9px] text-slate-600">
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          <div className="rounded-2xl rounded-tl-none bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-100 leading-relaxed">
+                            {msg.message_type === "image" && msg.attachment_url ? (
+                              <img src={resolveUrl(msg.attachment_url)} alt="Shared" className="max-w-full rounded-lg max-h-48 object-contain cursor-pointer border border-amber-500/20" onClick={() => window.open(resolveUrl(msg.attachment_url), "_blank")} />
+                            ) : msg.message_type === "voice" && msg.attachment_url ? (
+                              <audio controls src={resolveUrl(msg.attachment_url)} className="w-full h-8 rounded mt-1" />
+                            ) : (
+                              <p>{msg.message}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  /* ── My own message ── */
+                  if (isMine) {
+                    return (
+                      <div key={msg.id} className="flex justify-end gap-2">
+                        <div className="max-w-[78%]">
+                          <div className="flex items-center justify-end gap-1.5 mb-1">
+                            <span className="text-[9px] text-slate-600">
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                            <span className="text-[9px] font-bold text-teal-400">You ({msg.sender_role})</span>
+                          </div>
+                          <div className="rounded-2xl rounded-tr-none bg-teal-500 px-3 py-2 text-xs text-slate-950 font-medium leading-relaxed shadow-md shadow-teal-500/20">
+                            {msg.message_type === "image" && msg.attachment_url ? (
+                              <img src={resolveUrl(msg.attachment_url)} alt="Shared" className="max-w-full rounded-lg max-h-48 object-contain cursor-pointer" onClick={() => window.open(resolveUrl(msg.attachment_url), "_blank")} />
+                            ) : msg.message_type === "voice" && msg.attachment_url ? (
+                              <audio controls src={resolveUrl(msg.attachment_url)} className="w-full h-8 rounded mt-1" />
+                            ) : (
+                              <p>{msg.message}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="size-7 shrink-0 rounded-full bg-teal-500/20 border border-teal-500/30 grid place-items-center text-[9px] font-bold text-teal-400 uppercase">
+                          {user?.name?.charAt(0) ?? "U"}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  /* ── Other party (buyer or seller) ── */
+                  const isSel = msg.sender_role === "seller";
                   return (
-                    <div
-                      key={msg.id}
-                      className={`flex ${isAdmin ? "justify-center" : isMine ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
-                          isAdmin
-                            ? "bg-amber-500/15 border border-amber-500/30 text-amber-200 text-center"
-                            : isMine
-                            ? "bg-teal-500 text-slate-950 font-medium rounded-tr-none shadow-md shadow-teal-500/20"
-                            : "bg-[#18212f] text-slate-200 border border-white/[0.08] rounded-tl-none shadow-md"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className={`text-[10px] font-bold ${isAdmin ? "text-amber-400" : isMine ? "text-slate-900" : "text-cyan-400"}`}>
-                            {msg.sender_name} ({msg.sender_role.toUpperCase()})
+                    <div key={msg.id} className="flex justify-start gap-2">
+                      <div className={`size-7 shrink-0 rounded-full grid place-items-center text-[9px] font-bold uppercase ${isSel ? "bg-cyan-500/20 border border-cyan-500/30 text-cyan-400" : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400"}`}>
+                        {msg.sender_name?.charAt(0) ?? "?"}
+                      </div>
+                      <div className="max-w-[78%]">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className={`text-[9px] font-bold ${isSel ? "text-cyan-400" : "text-emerald-400"}`}>
+                            {msg.sender_name} <span className="font-normal text-slate-500">({msg.sender_role})</span>
                           </span>
-                          <span className="text-[9px] opacity-70">
+                          <span className="text-[9px] text-slate-600">
                             {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                           </span>
                         </div>
-                        {/* Render by message type */}
-                        {msg.message_type === "image" && msg.attachment_url ? (
-                          <img
-                            src={resolveUrl(msg.attachment_url)}
-                            alt="Shared image"
-                            className="max-w-full rounded-lg max-h-48 object-contain mt-1 cursor-pointer border border-white/10"
-                            onClick={() => window.open(resolveUrl(msg.attachment_url), "_blank")}
-                          />
-                        ) : msg.message_type === "voice" && msg.attachment_url ? (
-                          <div className="mt-1">
-                            <audio controls src={resolveUrl(msg.attachment_url)} className="w-full h-8 rounded" />
-                          </div>
-                        ) : (
-                          <p>{msg.message}</p>
-                        )}
+                        <div className="rounded-2xl rounded-tl-none bg-[#18212f] border border-white/[0.08] px-3 py-2 text-xs text-slate-200 leading-relaxed shadow-md">
+                          {msg.message_type === "image" && msg.attachment_url ? (
+                            <img src={resolveUrl(msg.attachment_url)} alt="Shared" className="max-w-full rounded-lg max-h-48 object-contain cursor-pointer border border-white/10" onClick={() => window.open(resolveUrl(msg.attachment_url), "_blank")} />
+                          ) : msg.message_type === "voice" && msg.attachment_url ? (
+                            <audio controls src={resolveUrl(msg.attachment_url)} className="w-full h-8 rounded mt-1" />
+                          ) : (
+                            <p>{msg.message}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -734,67 +811,65 @@ export default function InboxPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input */}
+            {/* ── Bottom input bar ── */}
             {selectedOrder.isClosed ? (
-              <div className="border-t border-white/[0.08] bg-[#0c1017] p-3 text-center text-xs text-slate-500 flex items-center justify-center gap-2 shrink-0">
+              <div className="shrink-0 flex items-center justify-center gap-2 border-t border-white/[0.08] bg-[#0c1017] p-3 text-xs text-slate-500">
                 <Lock size={12} />
-                <span>Conversation closed. Use Chat with Admin for support.</span>
+                <span>Conversation closed · use Chat with Admin for support</span>
               </div>
             ) : (
-              <div className="border-t border-white/[0.08] bg-[#0c1017] p-3 space-y-1.5 shrink-0">
+              <div className="shrink-0 border-t border-white/[0.08] bg-[#0c1017] px-3 py-2.5">
                 {uploadingFile && (
-                  <p className="text-[10px] text-teal-400 text-center animate-pulse">Uploading file...</p>
+                  <p className="mb-1.5 text-center text-[10px] text-teal-400 animate-pulse">Uploading...</p>
+                )}
+                {isRecording && (
+                  <p className="mb-1.5 text-center text-[10px] text-rose-400 animate-pulse">● Recording — click stop when done</p>
                 )}
                 <form onSubmit={handleSendText} className="flex items-center gap-2">
-                  {/* Image upload */}
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageUpload}
-                  />
+                  {/* hidden file input */}
+                  <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+
+                  {/* image button */}
                   <button
                     type="button"
                     title="Send image"
                     disabled={uploadingFile || isRecording}
                     onClick={() => imageInputRef.current?.click()}
-                    className="grid size-8 place-items-center rounded-lg border border-white/10 text-slate-400 hover:text-amber-400 hover:border-amber-500/30 disabled:opacity-40 transition"
+                    className="shrink-0 grid size-9 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-400 hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-40 transition"
                   >
-                    <ImageIcon size={15} />
+                    <ImageIcon size={16} />
                   </button>
 
-                  {/* Voice record */}
+                  {/* mic button */}
                   <button
                     type="button"
-                    title={isRecording ? "Stop recording" : "Record voice message"}
+                    title={isRecording ? "Stop recording" : "Record voice"}
                     disabled={uploadingFile}
                     onClick={isRecording ? stopRecording : startRecording}
-                    className={`grid size-8 place-items-center rounded-lg border transition ${
+                    className={`shrink-0 grid size-9 place-items-center rounded-xl border transition ${
                       isRecording
-                        ? "bg-rose-500/20 border-rose-500/40 text-rose-400 animate-pulse"
-                        : "border-white/10 text-slate-400 hover:text-teal-400 hover:border-teal-500/30"
+                        ? "border-rose-500/50 bg-rose-500/15 text-rose-400 animate-pulse"
+                        : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-teal-500/40 hover:text-teal-400"
                     } disabled:opacity-40`}
                   >
-                    {isRecording ? <Square size={13} /> : <Mic size={15} />}
+                    {isRecording ? <Square size={14} /> : <Mic size={16} />}
                   </button>
 
+                  {/* text input */}
                   <input
                     type="text"
                     value={orderChatInput}
                     onChange={(e) => setOrderChatInput(e.target.value)}
                     disabled={isRecording || uploadingFile}
-                    placeholder={
-                      isRecording
-                        ? "Recording... click ■ to stop and send"
-                        : "Message seller and admin mediator..."
-                    }
-                    className="flex-1 bg-transparent px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none disabled:opacity-50"
+                    placeholder="Type a message…"
+                    className="flex-1 min-w-0 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-teal-500/50 focus:outline-none focus:bg-white/[0.06] disabled:opacity-50 transition"
                   />
+
+                  {/* send button */}
                   <button
                     type="submit"
                     disabled={!orderChatInput.trim() || sendingMessage || isRecording || uploadingFile}
-                    className="grid size-9 place-items-center rounded-xl bg-teal-500 text-slate-950 shadow-md transition hover:bg-teal-400 disabled:opacity-40"
+                    className="shrink-0 grid size-9 place-items-center rounded-xl bg-teal-500 text-slate-950 shadow-md hover:bg-teal-400 active:scale-95 disabled:opacity-40 transition"
                   >
                     <Send size={15} />
                   </button>
@@ -808,7 +883,7 @@ export default function InboxPage() {
       {/* ===== Admin Support Modal ===== */}
       {isAdminChatOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="flex h-[32rem] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl">
+          <div className="flex h-[85vh] max-h-[640px] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#0c1017] p-4 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="grid size-9 place-items-center rounded-full overflow-hidden bg-gradient-to-tr from-amber-400 to-teal-400 p-0.5">
@@ -833,7 +908,7 @@ export default function InboxPage() {
               </button>
             </div>
 
-            <div className="flex-1 space-y-3 overflow-y-auto p-4 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
+            <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
               {adminMessages.map((m, idx) => (
                 <div key={idx} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
                   <div
