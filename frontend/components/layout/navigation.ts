@@ -131,12 +131,6 @@ export const navigationSections: {
       },
       {
         type: "link",
-        label: "Security",
-        href: "/security",
-        icon: ShieldCheck,
-      },
-      {
-        type: "link",
         label: "My Market Place",
         href: "/my-marketplace",
         icon: ListOrdered,

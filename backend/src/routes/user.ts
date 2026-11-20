@@ -149,6 +149,146 @@ userRouter.get("/profile", async (req: Request, res: Response): Promise<void> =>
 });
 
 /**
+ * PATCH /api/user/profile
+ * Updates user profile details (first_name, last_name, phone, email) in MySQL.
+ */
+userRouter.patch("/profile", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId, firstName, lastName, phone, email } = req.body;
+    const targetUserId = userId ? parseInt(String(userId), 10) : null;
+    if (!targetUserId) {
+      res.status(400).json({ success: false, error: "userId is required" });
+      return;
+    }
+
+    // Update fields if provided
+    await pool.query(
+      `UPDATE users SET
+        first_name = COALESCE(?, first_name),
+        last_name = COALESCE(?, last_name),
+        phone = COALESCE(?, phone),
+        email = COALESCE(?, email),
+        updated_at = NOW()
+       WHERE id = ?`,
+      [
+        firstName || null,
+        lastName || null,
+        phone || null,
+        email || null,
+        targetUserId,
+      ]
+    );
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT id, first_name, last_name, email, phone, balance, locked_balance, role, created_at FROM users WHERE id = ? LIMIT 1",
+      [targetUserId]
+    );
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully.",
+      user: rows[0],
+    });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * GET /api/user/favorites
+ * Returns channels favorited by the user from MySQL database.
+ */
+userRouter.get("/favorites", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    if (!userId) {
+      res.json({ success: true, favorites: [] });
+      return;
+    }
+
+    // Ensure table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_favorites (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        channel_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_user_fav (user_id, channel_id),
+        INDEX idx_fav_user (user_id),
+        INDEX idx_fav_channel (channel_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT 
+        c.*,
+        f.id AS favorite_id,
+        f.created_at AS favorited_at
+       FROM user_favorites f
+       JOIN channels c ON f.channel_id = c.id
+       WHERE f.user_id = ?
+       ORDER BY f.id DESC`,
+      [userId]
+    );
+
+    res.json({ success: true, favorites: rows });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * POST /api/user/favorites
+ * Adds a channel to user's favorites in MySQL.
+ */
+userRouter.post("/favorites", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { userId, channelId } = req.body;
+    const targetUserId = userId ? parseInt(String(userId), 10) : null;
+    const targetChannelId = channelId ? parseInt(String(channelId), 10) : null;
+
+    if (!targetUserId || !targetChannelId) {
+      res.status(400).json({ success: false, error: "userId and channelId are required" });
+      return;
+    }
+
+    await pool.query(
+      "INSERT IGNORE INTO user_favorites (user_id, channel_id) VALUES (?, ?)",
+      [targetUserId, targetChannelId]
+    );
+
+    res.status(201).json({ success: true, message: "Added to favorites." });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * DELETE /api/user/favorites/:channelId
+ * Removes a channel from user's favorites in MySQL.
+ */
+userRouter.delete("/favorites/:channelId", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const channelId = parseInt(req.params.channelId as string, 10);
+    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+
+    if (!userId || !channelId) {
+      res.status(400).json({ success: false, error: "userId and channelId are required" });
+      return;
+    }
+
+    await pool.query(
+      "DELETE FROM user_favorites WHERE user_id = ? AND channel_id = ?",
+      [userId, channelId]
+    );
+
+    res.json({ success: true, message: "Removed from favorites." });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
  * GET /api/user/notifications
  */
 userRouter.get("/notifications", async (req: Request, res: Response): Promise<void> => {

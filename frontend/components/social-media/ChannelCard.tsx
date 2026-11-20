@@ -68,11 +68,17 @@ export default function ChannelCard({
       let currentList = stored ? JSON.parse(stored) : [];
       if (!Array.isArray(currentList)) currentList = [];
 
+      const rawUser = localStorage.getItem("hulu_user");
+      const userId = rawUser ? JSON.parse(rawUser)?.id : null;
+
       const exists = currentList.some((item: any) => item.id === channel.id);
 
       if (exists) {
         currentList = currentList.filter((item: any) => item.id !== channel.id);
         setStarred(false);
+        if (userId) {
+          fetch(`/api/user/favorites/${channel.id}?userId=${userId}`, { method: "DELETE" }).catch(() => {});
+        }
       } else {
         const newFav = {
           id: channel.id,
@@ -88,6 +94,13 @@ export default function ChannelCard({
         };
         currentList = [newFav, ...currentList];
         setStarred(true);
+        if (userId) {
+          fetch("/api/user/favorites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, channelId: channel.id }),
+          }).catch(() => {});
+        }
       }
 
       localStorage.setItem("hulu_favorites", JSON.stringify(currentList));

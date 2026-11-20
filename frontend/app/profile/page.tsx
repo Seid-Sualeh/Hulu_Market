@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@/lib/auth";
+import { useAuth, signInUser, signOutUser } from "@/lib/auth";
 import {
   ArrowDownCircle,
   ArrowLeftRight,
@@ -15,48 +15,157 @@ import {
   Headphones,
   Heart,
   Info,
+  Layers,
   LayoutDashboard,
   ListOrdered,
   Lock,
   LogOut,
   Mail,
   MessageCircle,
-  Shield,
+  Phone,
+  RefreshCw,
+  ShoppingBag,
   User,
   Wallet,
   X,
   Zap,
 } from "lucide-react";
 
+interface UserProfileData {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  balance: number;
+  locked_balance: number;
+  role: "user" | "admin";
+  created_at: string;
+}
+
 export default function ProfilePage() {
+  const { user, refreshUser } = useAuth();
+
+  const [profileData, setProfileData] = useState<UserProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Modals
   const [personalModalOpen, setPersonalModalOpen] = useState(false);
   const [languageModalOpen, setLanguageModalOpen] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState("English");
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
-  // Authenticated user info
-  const { user } = useAuth();
-  const [name, setName] = useState("");
+  // Edit form state
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 
-  useEffect(() => {
-    if (user) {
-      setName(user.name || "");
-      setEmail(user.email || "");
-      setPhone(user.phone || "");
+  const loadProfile = async () => {
+    if (!user?.id) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/user/profile?userId=${user.id}`);
+      const data = await res.json();
+      if (data.success && data.user) {
+        setProfileData(data.user);
+        setFirstName(data.user.first_name || "");
+        setLastName(data.user.last_name || "");
+        setEmail(data.user.email || "");
+        setPhone(data.user.phone || "");
+      }
+    } catch (err) {
+      console.error("[Profile Load Error]:", err);
+    } finally {
+      setLoading(false);
     }
-  }, [user]);
+  };
+
+  useEffect(() => {
+    loadProfile();
+  }, [user?.id]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.id) return;
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      const res = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          firstName,
+          lastName,
+          email,
+          phone,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.user) {
+        setProfileData(data.user);
+        // Sync with local auth storage
+        signInUser(
+          data.user.email,
+          `${data.user.first_name} ${data.user.last_name}`.trim(),
+          data.user.phone,
+          user.token,
+          data.user.id,
+          Number(data.user.balance),
+          data.user.role
+        );
+        setFeedback({ type: "success", text: "Profile details updated successfully in MySQL database." });
+        setPersonalModalOpen(false);
+      } else {
+        setFeedback({ type: "error", text: data.error || "Failed to update profile." });
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Network error saving profile." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleLogout = () => {
+    signOutUser();
+    window.location.href = "/auth";
+  };
+
+  const availableBalance = Number(profileData?.balance ?? user?.balance ?? 0);
+  const lockedBalance = Number(profileData?.locked_balance ?? 0);
+  const fullName = profileData
+    ? `${profileData.first_name} ${profileData.last_name}`.trim() || user?.name || "User"
+    : user?.name || "User";
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-24">
-      {/* 1. TOP HERO PROFILE CARD */}
+      {/* Toast Notification */}
+      {feedback && (
+        <div
+          className={`rounded-2xl p-4 text-xs font-semibold flex items-center justify-between shadow-lg ${
+            feedback.type === "success"
+              ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
+              : "bg-rose-500/15 border border-rose-500/30 text-rose-300"
+          }`}
+        >
+          <span>{feedback.text}</span>
+          <button onClick={() => setFeedback(null)} className="opacity-70 hover:opacity-100">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* 1. TOP HERO PROFILE CARD (REAL DATABASE DATA) */}
       <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#111722] p-6 shadow-xl">
-        {/* Subtle decorative top accent line */}
         <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-400/40 via-teal-400/60 to-cyan-500/40" />
 
         <div className="flex flex-col items-center text-center">
-          {/* Avatar with Hulu Market logo & ambient glow */}
+          {/* Avatar with logo & ambient glow */}
           <div className="relative mt-2">
             <div className="pointer-events-none absolute inset-0 rounded-full bg-teal-400/20 blur-xl" />
             <div className="relative grid size-24 place-items-center rounded-full overflow-hidden bg-slate-900 shadow-xl shadow-teal-950/50 ring-4 ring-amber-400/50">
@@ -64,40 +173,55 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Name & Email */}
-          <h1 className="mt-4 text-xl font-bold tracking-tight text-white sm:text-2xl">
-            {name}
+          {/* Name & Email from MySQL */}
+          <h1 className="mt-4 text-xl font-bold tracking-tight text-white sm:text-2xl flex items-center gap-2">
+            <span>{fullName}</span>
+            {profileData?.role === "admin" && (
+              <span className="rounded-full bg-amber-400/20 border border-amber-400/40 px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase">
+                Admin
+              </span>
+            )}
           </h1>
-          <p className="mt-0.5 text-xs text-slate-400">{email}</p>
+          <p className="mt-0.5 text-xs text-slate-400">{profileData?.email || user?.email}</p>
+          {profileData?.phone && (
+            <p className="mt-0.5 text-[11px] text-slate-400 font-mono flex items-center justify-center gap-1">
+              <Phone size={10} className="text-teal-400" />
+              <span>{profileData.phone}</span>
+            </p>
+          )}
           <p className="mt-1 text-xs text-amber-300/90 font-medium tracking-wide">
             Everything You Need. One Marketplace.
           </p>
 
-          {/* Two Balance Mini-Pills */}
+          {/* Two Live Balance Mini-Pills */}
           <div className="mt-6 grid w-full grid-cols-2 gap-3">
             {/* Available */}
-            <div className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-[#0c1017] p-3 text-left shadow-sm">
-              <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
+            <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-[#0c1017] p-3 text-left shadow-sm">
+              <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <Wallet size={16} />
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                   AVAILABLE
                 </p>
-                <p className="text-xs font-bold text-teal-400">0 ETB</p>
+                <p className="text-xs sm:text-sm font-bold text-emerald-400">
+                  {availableBalance.toLocaleString()} ETB
+                </p>
               </div>
             </div>
 
-            {/* Locked (Pending) */}
-            <div className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-[#0c1017] p-3 text-left shadow-sm">
-              <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            {/* Locked (Pending in Escrow) */}
+            <div className="flex items-center gap-3 rounded-2xl border border-cyan-500/20 bg-[#0c1017] p-3 text-left shadow-sm">
+              <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                 <Lock size={16} />
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  LOCKED (PENDING)
+                  LOCKED (ESCROW)
                 </p>
-                <p className="text-xs font-bold text-amber-400">0 ETB</p>
+                <p className="text-xs sm:text-sm font-bold text-cyan-400">
+                  {lockedBalance.toLocaleString()} ETB
+                </p>
               </div>
             </div>
           </div>
@@ -128,7 +252,10 @@ export default function ProfilePage() {
                 Personal Details
               </span>
             </div>
-            <ChevronRight size={16} className="text-slate-500" />
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400 hidden sm:inline">Edit Name &amp; Phone</span>
+              <ChevronRight size={16} className="text-slate-500" />
+            </div>
           </button>
 
           {/* Language */}
@@ -153,7 +280,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* 3. SECTION: ACCOUNT */}
+      {/* 3. SECTION: ACCOUNT QUICK LINKS */}
       <div className="space-y-2">
         <div className="flex items-center gap-1.5 px-1">
           <span className="size-2 rounded-full bg-cyan-400" />
@@ -163,25 +290,9 @@ export default function ProfilePage() {
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111722] divide-y divide-white/[0.05] shadow-md">
-          {/* Security & devices */}
+          {/* Dashboard */}
           <Link
-            href="/security"
-            className="flex items-center justify-between p-3.5 transition hover:bg-white/[0.03]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="grid size-8 place-items-center rounded-lg bg-teal-500/10 text-teal-400">
-                <Shield size={16} />
-              </div>
-              <span className="text-xs font-semibold text-white">
-                Security &amp; devices
-              </span>
-            </div>
-            <ChevronRight size={16} className="text-slate-500" />
-          </Link>
-
-          {/* Account Dashboard */}
-          <Link
-            href="/"
+            href={user?.role === "admin" ? "/admin" : "/dashboard"}
             className="flex items-center justify-between p-3.5 transition hover:bg-white/[0.03]"
           >
             <div className="flex items-center gap-3">
@@ -189,22 +300,22 @@ export default function ProfilePage() {
                 <LayoutDashboard size={16} />
               </div>
               <span className="text-xs font-semibold text-white">
-                Account Dashboard
+                {user?.role === "admin" ? "Admin Control Center" : "Account Dashboard"}
               </span>
             </div>
             <ChevronRight size={16} className="text-slate-500" />
           </Link>
 
-          {/* Channels */}
+          {/* My Market Place */}
           <Link
-            href="/channels"
+            href="/my-marketplace"
             className="flex items-center justify-between p-3.5 transition hover:bg-white/[0.03]"
           >
             <div className="flex items-center gap-3">
               <div className="grid size-8 place-items-center rounded-lg bg-purple-500/10 text-purple-400">
                 <ListOrdered size={16} />
               </div>
-              <span className="text-xs font-semibold text-white">Channels</span>
+              <span className="text-xs font-semibold text-white">My Market Place</span>
             </div>
             <ChevronRight size={16} className="text-slate-500" />
           </Link>
@@ -239,39 +350,23 @@ export default function ProfilePage() {
             <ChevronRight size={16} className="text-slate-500" />
           </Link>
 
-          {/* Inbox */}
-          <Link
-            href="/inbox"
-            className="flex items-center justify-between p-3.5 transition hover:bg-white/[0.03]"
-          >
-            <div className="flex items-center gap-3">
-              <div className="grid size-8 place-items-center rounded-lg bg-cyan-500/10 text-cyan-400">
-                <Mail size={16} />
-              </div>
-              <span className="text-xs font-semibold text-white">Inbox</span>
-            </div>
-            <ChevronRight size={16} className="text-slate-500" />
-          </Link>
-
-          {/* Chat with Admin */}
+          {/* Inbox (Escrow Trades) */}
           <Link
             href="/inbox"
             className="flex items-center justify-between p-3.5 transition hover:bg-white/[0.03]"
           >
             <div className="flex items-center gap-3">
               <div className="grid size-8 place-items-center rounded-lg bg-teal-500/10 text-teal-400">
-                <MessageCircle size={16} />
+                <Mail size={16} />
               </div>
-              <span className="text-xs font-semibold text-white">
-                Chat with Admin
-              </span>
+              <span className="text-xs font-semibold text-white">Inbox &amp; Escrow Trades</span>
             </div>
             <ChevronRight size={16} className="text-slate-500" />
           </Link>
         </div>
       </div>
 
-      {/* 4. SECTION: WALLET */}
+      {/* 4. SECTION: WALLET (LIVE ETB BALANCES) */}
       <div className="space-y-2">
         <div className="flex items-center gap-1.5 px-1">
           <span className="size-2 rounded-full bg-emerald-400" />
@@ -281,34 +376,29 @@ export default function ProfilePage() {
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111722] divide-y divide-white/[0.05] shadow-md">
-          {/* Available */}
+          {/* Available Balance */}
           <div className="flex items-center justify-between p-3.5">
             <div className="flex items-center gap-3">
               <div className="grid size-8 place-items-center rounded-lg bg-teal-500/10 text-teal-400">
                 <Wallet size={16} />
               </div>
-              <span className="text-xs font-semibold text-white">Available</span>
+              <span className="text-xs font-semibold text-white">Available Balance</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-xs font-bold text-teal-400">
-                0 ETB
-              </span>
-              <ChevronRight size={16} className="text-slate-500" />
-            </div>
+            <span className="rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-xs font-bold text-teal-400">
+              {availableBalance.toLocaleString()} ETB
+            </span>
           </div>
 
-          {/* Locked (pending) */}
+          {/* Locked Balance in Escrow */}
           <div className="flex items-center justify-between p-3.5">
             <div className="flex items-center gap-3">
-              <div className="grid size-8 place-items-center rounded-lg bg-amber-500/10 text-amber-400">
+              <div className="grid size-8 place-items-center rounded-lg bg-cyan-500/10 text-cyan-400">
                 <Lock size={16} />
               </div>
-              <span className="text-xs font-semibold text-white">
-                Locked (pending)
-              </span>
+              <span className="text-xs font-semibold text-white">Locked in Escrow</span>
             </div>
-            <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-bold text-amber-400">
-              0 ETB
+            <span className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5 text-xs font-bold text-cyan-400">
+              {lockedBalance.toLocaleString()} ETB
             </span>
           </div>
 
@@ -322,7 +412,7 @@ export default function ProfilePage() {
                 <ArrowLeftRight size={16} />
               </div>
               <span className="text-xs font-semibold text-white">
-                Transactions
+                Transaction History
               </span>
             </div>
             <ChevronRight size={16} className="text-slate-500" />
@@ -337,7 +427,7 @@ export default function ProfilePage() {
               <div className="grid size-8 place-items-center rounded-lg bg-teal-500/10 text-teal-400">
                 <ArrowDownCircle size={16} />
               </div>
-              <span className="text-xs font-semibold text-white">Deposit</span>
+              <span className="text-xs font-semibold text-white">Deposit ETB</span>
             </div>
             <ChevronRight size={16} className="text-slate-500" />
           </Link>
@@ -351,7 +441,7 @@ export default function ProfilePage() {
               <div className="grid size-8 place-items-center rounded-lg bg-amber-500/10 text-amber-400">
                 <ArrowUpCircle size={16} />
               </div>
-              <span className="text-xs font-semibold text-white">Withdraw</span>
+              <span className="text-xs font-semibold text-white">Withdraw ETB</span>
             </div>
             <ChevronRight size={16} className="text-slate-500" />
           </Link>
@@ -379,7 +469,7 @@ export default function ProfilePage() {
                 <Headphones size={16} />
               </div>
               <span className="text-xs font-semibold text-white">
-                Contact Us
+                Contact Telegram Support
               </span>
             </div>
             <ExternalLink size={15} className="text-sky-400" />
@@ -403,11 +493,11 @@ export default function ProfilePage() {
                 <Info size={16} />
               </div>
               <span className="text-xs font-semibold text-white">
-                App Version
+                Platform Version
               </span>
             </div>
             <span className="rounded-lg bg-white/[0.05] px-2.5 py-1 text-[11px] font-mono text-amber-300">
-              v2.0.0
+              v2.1.0 (MySQL Production)
             </span>
           </div>
         </div>
@@ -433,31 +523,17 @@ export default function ProfilePage() {
       {/* Brand Footer */}
       <div className="pt-6 text-center">
         <p className="font-serif text-xs font-medium tracking-wide text-slate-500">
-          Hulu Market
+          Hulu Market &bull; Secured with Escrow Protection
         </p>
       </div>
 
-      {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-30 flex flex-col items-center gap-2">
-        <button
-          type="button"
-          title="Earn ETB"
-          className="grid size-12 place-items-center rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 shadow-xl shadow-amber-500/30 transition hover:scale-105 active:scale-95"
-        >
-          <Zap size={22} className="fill-slate-950" />
-        </button>
-        <div className="rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-500/40">
-          ETB
-        </div>
-      </div>
-
-      {/* MODAL: Personal Details */}
+      {/* MODAL: Personal Details (Updates to MySQL) */}
       {personalModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111722] p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
               <h3 className="text-base font-bold text-white">
-                Personal Details
+                Edit Personal Details
               </h3>
               <button
                 type="button"
@@ -468,15 +544,28 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            <div className="mt-4 space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400">Full Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2 text-xs text-white focus:border-teal-400 focus:outline-none"
-                />
+            <form onSubmit={handleSaveProfile} className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400">First Name</label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                    className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2 text-xs text-white focus:border-teal-400 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400">Last Name</label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                    className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2 text-xs text-white focus:border-teal-400 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -485,6 +574,7 @@ export default function ProfilePage() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  required
                   className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2 text-xs text-white focus:border-teal-400 focus:outline-none"
                 />
               </div>
@@ -495,6 +585,8 @@ export default function ProfilePage() {
                   type="text"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+251..."
+                  required
                   className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2 text-xs text-white focus:border-teal-400 focus:outline-none"
                 />
               </div>
@@ -505,25 +597,32 @@ export default function ProfilePage() {
                   type="text"
                   disabled
                   value="Ethiopia (ET)"
-                  className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2 text-xs text-slate-400 cursor-not-allowed"
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2 text-xs text-slate-500 cursor-not-allowed"
                 />
               </div>
-            </div>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setPersonalModalOpen(false)}
-                className="rounded-xl bg-teal-500 px-5 py-2 text-xs font-bold text-slate-950 hover:bg-teal-400 shadow-md"
-              >
-                Save Changes
-              </button>
-            </div>
+              <div className="mt-6 flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPersonalModalOpen(false)}
+                  className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-xl bg-teal-500 px-5 py-2 text-xs font-bold text-slate-950 hover:bg-teal-400 shadow-md disabled:opacity-50"
+                >
+                  {saving ? "Saving to MySQL..." : "Save to Database"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* MODAL: Language */}
+      {/* MODAL: Language Selection */}
       {languageModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#111722] p-6 shadow-2xl">
@@ -539,29 +638,22 @@ export default function ProfilePage() {
             </div>
 
             <div className="mt-4 space-y-2">
-              {[
-                { id: "English", label: "English (US)" },
-                { id: "Amharic", label: "አማርኛ (Amharic)" },
-                { id: "Oromo", label: "Afaan Oromoo" },
-                { id: "Tigrinya", label: "ትግርኛ (Tigrinya)" },
-              ].map((lang) => (
+              {["English", "Amharic (አማርኛ)", "Afaan Oromoo", "Tigrinya (ትግርኛ)"].map((lang) => (
                 <button
-                  key={lang.id}
+                  key={lang}
                   type="button"
                   onClick={() => {
-                    setSelectedLanguage(lang.id);
+                    setSelectedLanguage(lang);
                     setLanguageModalOpen(false);
                   }}
-                  className={`flex w-full items-center justify-between rounded-xl p-3 text-xs font-semibold transition ${
-                    selectedLanguage === lang.id
-                      ? "bg-teal-500/15 text-teal-300 border border-teal-500/30"
-                      : "bg-[#0c1017] text-slate-300 hover:bg-[#151d2a]"
+                  className={`w-full rounded-xl p-3 text-left text-xs font-semibold transition flex items-center justify-between ${
+                    selectedLanguage === lang
+                      ? "bg-teal-500/15 border border-teal-500/40 text-teal-300"
+                      : "bg-[#0c1017] border border-white/[0.06] text-slate-300 hover:bg-white/[0.03]"
                   }`}
                 >
-                  <span>{lang.label}</span>
-                  {selectedLanguage === lang.id && (
-                    <span className="size-2 rounded-full bg-teal-400" />
-                  )}
+                  <span>{lang}</span>
+                  {selectedLanguage === lang && <span className="text-teal-400 font-bold">✓</span>}
                 </button>
               ))}
             </div>
@@ -572,31 +664,29 @@ export default function ProfilePage() {
       {/* MODAL: Logout Confirmation */}
       {logoutModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#111722] p-6 text-center shadow-2xl">
-            <div className="mx-auto grid size-12 place-items-center rounded-full bg-rose-500/10 text-rose-400">
-              <LogOut size={22} />
+          <div className="w-full max-w-sm rounded-2xl border border-rose-500/30 bg-[#111722] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-rose-500/10 text-rose-400">
+                <LogOut size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Confirm Sign Out</h3>
+                <p className="text-xs text-slate-400">Are you sure you want to log out of Hulu Market?</p>
+              </div>
             </div>
-            <h3 className="mt-3 text-base font-bold text-white">
-              Log out of your account?
-            </h3>
-            <p className="mt-1 text-xs text-slate-400">
-              You will need to sign in again to access your balance and manage listings.
-            </p>
-            <div className="mt-6 flex justify-center gap-3">
+
+            <div className="flex justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setLogoutModalOpen(false)}
-                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
+                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setLogoutModalOpen(false);
-                  window.location.href = "/";
-                }}
-                className="rounded-xl bg-rose-500 px-5 py-2 text-xs font-bold text-white hover:bg-rose-600 shadow-md"
+                onClick={handleLogout}
+                className="rounded-xl bg-rose-500 px-5 py-2 text-xs font-bold text-white hover:bg-rose-400 shadow-md"
               >
                 Logout
               </button>

@@ -200,6 +200,19 @@ export async function initDatabase(): Promise<boolean> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 7. User Favorites table
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS user_favorites (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        channel_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_user_fav (user_id, channel_id),
+        INDEX idx_fav_user (user_id),
+        INDEX idx_fav_channel (channel_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     // Seed default admin account if not already present
     const [existingAdmins]: [any[], any] = await conn.query(
       "SELECT id FROM users WHERE role = 'admin' LIMIT 1"
