@@ -71,6 +71,29 @@ userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
       [userId]
     );
 
+    // 4. Fetch recent transactions
+    const [recentTxRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, type, amount, payment_method, reference_code, status, created_at 
+       FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 5`,
+      [userId]
+    );
+
+    // 5. Fetch recent channel listings
+    const [recentChannelRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, name, platform, category, subscribers, price, status, created_at 
+       FROM channels WHERE seller_id = ? ORDER BY id DESC LIMIT 5`,
+      [userId]
+    );
+
+    // 6. Fetch active escrow orders
+    const [escrowRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, channel_name, platform, buyer_id, seller_id, amount, status, is_closed, buyer_confirmed, seller_confirmed, created_at
+       FROM escrow_orders 
+       WHERE (buyer_id = ? OR seller_id = ?) 
+       ORDER BY id DESC LIMIT 5`,
+      [userId, userId]
+    );
+
     res.json({
       success: true,
       stats: {
@@ -87,6 +110,9 @@ userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
         pendingWithdrawals: Number(txRows[0]?.pendingWithdrawals || 0),
         rejectedWithdrawals: Number(txRows[0]?.rejectedWithdrawals || 0),
       },
+      recentTransactions: recentTxRows,
+      recentChannels: recentChannelRows,
+      recentEscrows: escrowRows,
     });
   } catch (error: unknown) {
     const err = error as Error;
