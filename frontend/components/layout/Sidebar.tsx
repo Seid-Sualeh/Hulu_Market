@@ -183,9 +183,12 @@ function NavigationEntryItem({
 }
 
 export function SidebarBrand() {
+  const { user, signedIn, mounted } = useAuth();
+  const brandHref = mounted && signedIn && user?.role === "admin" ? "/admin" : "/";
+
   return (
     <Link
-      href="/"
+      href={brandHref}
       aria-label="Hulu Market home"
       className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-amber-300 group"
     >
@@ -266,7 +269,9 @@ export function SidebarNavigation({
   const { user, signedIn, mounted } = useAuth();
   const isAdmin = Boolean(mounted && signedIn && user?.role === "admin");
 
-  // RBAC: In guest mode, only show Main section. Admin control link ONLY shown if role is admin.
+  // RBAC: In guest mode, only show Main section.
+  // For Admin: remove the user Dashboard link because the dashboard for admin is Admin Control (/admin).
+  // For Regular Users / Guests: hide Admin Control.
   const visibleSections = navigationSections
     .filter((section) => {
       if (!mounted || !signedIn) {
@@ -277,6 +282,11 @@ export function SidebarNavigation({
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
+        // If user is admin: remove user Dashboard link
+        if (isAdmin && (item.label === "Dashboard" || (item.type === "link" && item.href === "/dashboard"))) {
+          return false;
+        }
+        // If user is not admin: hide Admin Control link
         if (item.label === "Admin Control" || (item.type === "link" && item.href === "/admin")) {
           return isAdmin;
         }

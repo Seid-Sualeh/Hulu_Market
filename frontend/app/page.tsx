@@ -8,13 +8,18 @@ import AuthPage from "./auth/page";
 
 export default function RootPage() {
   const router = useRouter();
-  const { signedIn, mounted } = useAuth();
+  const { user, signedIn, mounted } = useAuth();
 
   useEffect(() => {
-    if (mounted && !signedIn) {
-      router.replace("/auth");
+    if (mounted) {
+      if (!signedIn) {
+        router.replace("/auth");
+      } else if (user?.role === "admin") {
+        // Admin root landing is the Admin Control page (/admin)
+        router.replace("/admin");
+      }
     }
-  }, [mounted, signedIn, router]);
+  }, [mounted, signedIn, user?.role, router]);
 
   if (!mounted) {
     return <div className="min-h-screen bg-[#0b0f17]" />;
@@ -25,6 +30,11 @@ export default function RootPage() {
     return <AuthPage />;
   }
 
-  // Only logged in users see the private dashboard
+  // Admin users are redirected to Admin Control (/admin)
+  if (user?.role === "admin") {
+    return null;
+  }
+
+  // Only logged in regular users see the private user dashboard
   return <DashboardView />;
 }

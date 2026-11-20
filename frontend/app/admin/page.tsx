@@ -582,10 +582,10 @@ export default function AdminDashboardPage() {
               <span>Refresh</span>
             </button>
             <Link
-              href="/dashboard"
+              href="/social-media"
               className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#151d2a] px-3.5 py-2.5 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
             >
-              <span>View User View</span>
+              <span>Browse Marketplace</span>
             </Link>
           </div>
         </div>

@@ -51,7 +51,14 @@ function SignInContent() {
         data.user.role
       );
 
-      router.push(redirect);
+      if (data.user.role === "admin") {
+        const adminTarget = redirectParam && redirectParam !== "/" && redirectParam !== "/dashboard"
+          ? redirectParam
+          : "/admin";
+        router.push(adminTarget);
+      } else {
+        router.push(redirect);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to sign in";
       setErrorMessage(message);
