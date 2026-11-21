@@ -11,7 +11,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.3.0",
+    "@types/node": "^22.0.0",
     "bcryptjs": "^3.0.3",
     "cors": "latest",
     "dotenv": "latest",
@@ -21,17 +26,12 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.5.0",
     "mysql2": "^3.24.6",
+    "typescript": "^5.7.0",
     "zod": "latest"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
-    "@types/cors": "latest",
-    "@types/express": "latest",
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "latest",
     "eslint": "latest",
     "tsx": "latest",
-    "typescript": "latest",
     "typescript-eslint": "latest"
   }
 }
