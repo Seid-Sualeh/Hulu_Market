@@ -11,6 +11,21 @@ export function getApiBaseUrl(): string {
 }
 
 /**
+ * Resolve an uploaded image URL (like /uploads/upload-xxx.png) to a fully accessible URL.
+ * Supports relative Next.js proxying (/uploads/...) or direct backend URL.
+ */
+export function resolveImageUrl(path?: string | null): string {
+  if (!path || typeof path !== "string") return "";
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:")) {
+    return trimmed;
+  }
+  const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return cleanPath;
+}
+
+/**
  * Perform a fetch against the backend service.
  * Automatically injects auth headers (x-user-role, x-user-id, Authorization) from localStorage.
  */

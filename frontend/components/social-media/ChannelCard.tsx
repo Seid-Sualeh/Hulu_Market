@@ -223,11 +223,22 @@ export default function ChannelCard({
             <div className="size-12 shrink-0 rounded-2xl overflow-hidden ring-1 ring-white/10 bg-slate-800 shadow-inner flex items-center justify-center">
               {channel.screenshot_url ? (
                 <img
-                  src={`http://localhost:4001${channel.screenshot_url}`}
+                  src={
+                    channel.screenshot_url.startsWith("http")
+                      ? channel.screenshot_url
+                      : `http://localhost:4001${channel.screenshot_url.startsWith("/") ? "" : "/"}${channel.screenshot_url}`
+                  }
                   alt={channel.name}
                   className="size-full object-cover"
                   onError={(e) => {
-                    (e.currentTarget as HTMLElement).style.display = "none";
+                    const target = e.currentTarget as HTMLImageElement;
+                    if (target.src.includes(":4001") && channel.screenshot_url) {
+                      target.src = channel.screenshot_url.startsWith("/")
+                        ? channel.screenshot_url
+                        : `/${channel.screenshot_url}`;
+                    } else {
+                      target.style.display = "none";
+                    }
                   }}
                 />
               ) : (

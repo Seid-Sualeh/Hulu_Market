@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ArrowDownAZ, ArrowUpDown, Coins, Filter, Loader2, Search, SlidersHorizontal, Users, X, Zap } from "lucide-react";
 import PlatformFilter from "@/components/social-media/PlatformFilter";
 import ChannelCard from "@/components/social-media/ChannelCard";
-import PromoBanner from "@/components/social-media/PromoBanner";
 import ChannelDetailPage from "@/components/social-media/ChannelDetailPage";
 import { ChannelItem, PlatformType } from "@/components/social-media/types";
 import { isUserSignedIn, useAuth } from "@/lib/auth";
@@ -175,9 +174,6 @@ export default function SocialMediaPage() {
 
     return list;
   }, [platform, searchQuery, dbChannels, sortBy]);
-
-  const firstBatch = filteredChannels.slice(0, 3);
-  const secondBatch = filteredChannels.slice(3);
 
   const handleBuy = async (channel: ChannelItem) => {
     // 1. Must be signed in
@@ -531,40 +527,17 @@ export default function SocialMediaPage() {
           )}
         </div>
       ) : (
-        <>
-          {/* First batch */}
-          {firstBatch.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {firstBatch.map((ch) => (
-                <ChannelCard
-                  key={ch.id}
-                  channel={ch}
-                  onBuy={handleBuy}
-                  onDetails={handleDetails}
-                  isBuying={buyingChannelId === ch.id}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Center Promotional Banner */}
-          <PromoBanner />
-
-          {/* Remaining Channel Cards */}
-          {secondBatch.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {secondBatch.map((ch) => (
-                <ChannelCard
-                  key={ch.id}
-                  channel={ch}
-                  onBuy={handleBuy}
-                  onDetails={handleDetails}
-                  isBuying={buyingChannelId === ch.id}
-                />
-              ))}
-            </div>
-          )}
-        </>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredChannels.map((ch) => (
+            <ChannelCard
+              key={ch.id}
+              channel={ch}
+              onBuy={handleBuy}
+              onDetails={handleDetails}
+              isBuying={buyingChannelId === ch.id}
+            />
+          ))}
+        </div>
       )}
 
       {/* Floating Action Button */}

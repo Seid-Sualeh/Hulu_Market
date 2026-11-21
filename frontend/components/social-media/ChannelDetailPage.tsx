@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -38,6 +38,31 @@ export default function ChannelDetailPage({
 }: ChannelDetailPageProps) {
   const [copiedLink, setCopiedLink] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+
+  const rawScreenshot = channel.screenshot_url;
+  const buildInitialSrc = (url?: string | null) => {
+    if (!url) return null;
+    if (url.startsWith("http") || url.startsWith("data:")) return url;
+    return `http://localhost:4001${url.startsWith("/") ? "" : "/"}${url}`;
+  };
+
+  const [screenshotSrc, setScreenshotSrc] = useState<string | null>(buildInitialSrc(rawScreenshot));
+  const [hasImageError, setHasImageError] = useState(false);
+
+  useEffect(() => {
+    setScreenshotSrc(buildInitialSrc(channel.screenshot_url));
+    setHasImageError(false);
+  }, [channel.screenshot_url]);
+
+  const handleImageError = () => {
+    if (screenshotSrc && screenshotSrc.includes(":4001") && rawScreenshot) {
+      // Fallback from port 4001 to relative path /uploads/... (proxied by Next.js)
+      const rel = rawScreenshot.startsWith("/") ? rawScreenshot : `/${rawScreenshot}`;
+      setScreenshotSrc(rel);
+    } else {
+      setHasImageError(true);
+    }
+  };
 
   // Platform specific configuration
   const platformConfig = {
@@ -193,14 +218,12 @@ export default function ChannelDetailPage({
         {/* Circular Avatar with Platform Badge at bottom right */}
         <div className="relative">
           <div className="size-24 sm:size-28 rounded-full overflow-hidden border-2 border-white/20 bg-gradient-to-tr from-slate-800 to-slate-900 p-1 shadow-xl shadow-black/60">
-            {channel.screenshot_url ? (
+            {screenshotSrc && !hasImageError ? (
               <img
-                src={`http://localhost:4001${channel.screenshot_url}`}
+                src={screenshotSrc}
                 alt={channel.name}
                 className="size-full rounded-full object-cover"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = "none";
-                }}
+                onError={handleImageError}
               />
             ) : (
               <div className="size-full rounded-full bg-gradient-to-tr from-[#162032] to-[#24334a] flex items-center justify-center text-2xl font-bold text-white uppercase tracking-wider">
@@ -362,12 +385,15 @@ export default function ChannelDetailPage({
 
               {/* Phone Inner Screen */}
               <div className="relative w-full h-[480px] sm:h-[540px] rounded-[2.2rem] overflow-hidden bg-[#090d14] border border-white/5 flex flex-col justify-between">
-                {channel.screenshot_url ? (
-                  <img
-                    src={`http://localhost:4001${channel.screenshot_url}`}
-                    alt="Analytics verification screenshot"
-                    className="w-full h-full object-cover object-top transition duration-300 group-hover:brightness-105"
-                  />
+                {screenshotSrc && !hasImageError ? (
+                  <div className="relative size-full bg-black flex items-center justify-center overflow-hidden">
+                    <img
+                      src={screenshotSrc}
+                      alt="Analytics verification screenshot"
+                      className="w-full h-full object-contain transition duration-300 group-hover:brightness-105"
+                      onError={handleImageError}
+                    />
+                  </div>
                 ) : (
                   /* High-tech fallback analytics mock screen */
                   <div className="size-full p-4 pt-10 flex flex-col justify-between bg-gradient-to-b from-[#0e141f] via-[#090d14] to-[#0c1017] text-left">
@@ -489,11 +515,12 @@ export default function ChannelDetailPage({
               <X size={20} />
             </button>
 
-            {channel.screenshot_url ? (
+            {screenshotSrc && !hasImageError ? (
               <img
-                src={`http://localhost:4001${channel.screenshot_url}`}
+                src={screenshotSrc}
                 alt="Full size verification screenshot"
-                className="max-h-[82vh] w-auto max-w-full rounded-2xl object-contain border border-white/10 shadow-2xl"
+                className="max-h-[82vh] w-auto max-w-full rounded-2xl object-contain border border-white/10 shadow-2xl bg-black/80"
+                onError={handleImageError}
               />
             ) : (
               <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111722] p-8 text-center space-y-3">
