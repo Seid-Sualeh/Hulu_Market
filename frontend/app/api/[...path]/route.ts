@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL =
+const rawBackendUrl =
   process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:4001";
+  (process.env.NODE_ENV === "production"
+    ? "https://hulu-market-backend.onrender.com"
+    : "http://localhost:4001");
+
+const BACKEND_URL = rawBackendUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
 
 async function proxyRequest(
   req: NextRequest,
@@ -14,8 +19,19 @@ async function proxyRequest(
   const search = req.nextUrl.search || "";
   const targetUrl = `${BACKEND_URL}/api/${pathString}${search}`;
 
-  const headers = new Headers(req.headers);
-  headers.delete("host");
+  // Strip hop-by-hop and host headers to prevent proxy rejection in undici / Node fetch
+  const forwardHeaders = new Headers();
+  req.headers.forEach((value, key) => {
+    const lower = key.toLowerCase();
+    if (
+      lower !== "host" &&
+      lower !== "connection" &&
+      lower !== "content-length" &&
+      lower !== "transfer-encoding"
+    ) {
+      forwardHeaders.set(key, value);
+    }
+  });
 
   try {
     const body =
@@ -25,13 +41,23 @@ async function proxyRequest(
 
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers,
+      headers: forwardHeaders,
       body,
       cache: "no-store",
     });
 
     const data = await response.blob();
-    const responseHeaders = new Headers(response.headers);
+    const responseHeaders = new Headers();
+    response.headers.forEach((val, key) => {
+      const lower = key.toLowerCase();
+      if (
+        lower !== "content-length" &&
+        lower !== "transfer-encoding" &&
+        lower !== "content-encoding"
+      ) {
+        responseHeaders.set(key, val);
+      }
+    });
 
     return new NextResponse(data, {
       status: response.status,
@@ -43,7 +69,7 @@ async function proxyRequest(
     return NextResponse.json(
       {
         success: false,
-        error: `Could not connect to backend server at ${BACKEND_URL}. Please ensure the backend server is running ('npm --prefix backend run dev'). (${error.message})`,
+        error: `Could not connect to backend server at ${BACKEND_URL}. (${error.message})`,
       },
       { status: 502 }
     );

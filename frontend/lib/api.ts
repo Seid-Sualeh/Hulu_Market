@@ -1,24 +1,42 @@
 /**
  * Helper to get the base API URL whether running on the server or in the browser.
- * On the server (Vercel Functions/SSR), it uses the bound internal BACKEND_URL.
- * In the browser, it routes through the public rewrite prefix '/api'.
+ * In browser production (Vercel / live domain), connects directly to Render backend with CORS.
+ * In local development, routes through local proxy '/api' or localhost:4001.
  */
 export function getApiBaseUrl(): string {
-  if (typeof window === "undefined") {
-    return (
-      process.env.BACKEND_URL ||
-      process.env.NEXT_PUBLIC_BACKEND_URL ||
-      (process.env.NODE_ENV === "production"
-        ? "https://hulu-market-backend.onrender.com"
-        : "http://localhost:4001")
-    );
+  // If explicitly configured via env var, prioritize it
+  const explicit =
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    process.env.BACKEND_URL;
+
+  if (explicit) {
+    const clean = explicit.replace(/\/api\/?$/, "").replace(/\/$/, "");
+    return `${clean}/api`;
   }
-  return process.env.NEXT_PUBLIC_API_URL || "/api";
+
+  // In the browser:
+  if (typeof window !== "undefined") {
+    // If running on production domain (e.g. hulu-market.vercel.app or any non-localhost host)
+    if (
+      window.location.hostname !== "localhost" &&
+      window.location.hostname !== "127.0.0.1"
+    ) {
+      return "https://hulu-market-backend.onrender.com/api";
+    }
+    return "/api";
+  }
+
+  // Server-side (SSR / API Route)
+  if (process.env.NODE_ENV === "production") {
+    return "https://hulu-market-backend.onrender.com/api";
+  }
+  return "http://localhost:4001/api";
 }
 
 /**
  * Resolve an uploaded image URL (like /uploads/upload-xxx.png) to a fully accessible URL.
- * Supports relative Next.js proxying (/uploads/...) or direct backend URL.
+ * Automatically points to the production Render backend in production.
  */
 export function resolveImageUrl(path?: string | null): string {
   if (!path || typeof path !== "string") return "";
@@ -27,8 +45,19 @@ export function resolveImageUrl(path?: string | null): string {
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("data:")) {
     return trimmed;
   }
-  const cleanPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  return cleanPath;
+  const cleanPath = trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
+
+  const backendHost =
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    (typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1"
+      ? "https://hulu-market-backend.onrender.com"
+      : process.env.NODE_ENV === "production"
+      ? "https://hulu-market-backend.onrender.com"
+      : "");
+
+  return backendHost ? `${backendHost}/${cleanPath}` : `/${cleanPath}`;
 }
 
 /**
