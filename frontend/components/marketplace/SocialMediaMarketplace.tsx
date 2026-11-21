@@ -356,7 +356,7 @@ export default function SocialMediaMarketplace({
               Channel listings
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Preview example channels and their listing information.
+              Browse available channels and their listing information.
             </p>
           </div>
           <span className="shrink-0 text-xs text-slate-500">
@@ -391,7 +391,7 @@ export default function SocialMediaMarketplace({
                       <div className="min-w-0 flex-1 pt-0.5">
                         <div className="flex items-center gap-2">
                           <span className="rounded-md bg-blue-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-200 ring-1 ring-inset ring-blue-400/15">
-                            Preview
+                            Listing
                           </span>
                           <span className="truncate text-[10px] font-medium text-slate-500">
                             {style.label}

@@ -1000,22 +1000,22 @@ export default function AdminDashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* Trades List (Left Column) */}
-            <div className="lg:col-span-5 rounded-2xl border border-white/[0.08] bg-[#111722] p-4 shadow-md space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+            <div className="lg:col-span-5 rounded-2xl border border-white/[0.08] bg-[#111722] p-4 shadow-md flex flex-col h-[38rem] max-h-[75vh]">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1 shrink-0 mb-2">
                 Active &amp; Past Trades
               </h3>
 
               {escrowOrders.length > 0 ? (
-                <div className="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
+                <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
                   {escrowOrders.map((trade) => {
                     const isSelected = activeEscrowTrade?.id === trade.id;
                     return (
                       <div
                         key={trade.id}
                         onClick={() => openEscrowMediation(trade)}
-                        className={`cursor-pointer rounded-xl border p-3 transition space-y-1 ${
+                        className={`cursor-pointer rounded-xl border p-3 transition space-y-1.5 ${
                           isSelected
-                            ? "border-amber-400 bg-amber-400/10 shadow-md"
+                            ? "border-amber-400 bg-amber-400/10 shadow-md ring-1 ring-amber-400/30"
                             : "border-white/[0.06] bg-[#0c1017] hover:bg-white/[0.04]"
                         }`}
                       >
@@ -1032,23 +1032,23 @@ export default function AdminDashboardPage() {
                           </span>
                         </div>
                         <h4 className="text-xs font-bold text-white truncate">{trade.channel_name}</h4>
-                        <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
                           <span>{trade.buyer_name || "Buyer"} ➔ {trade.seller_name || "Seller"}</span>
                           <span className="font-bold text-teal-400">{Number(trade.amount).toLocaleString()} ETB</span>
                         </div>
                         {/* Confirmation status badges */}
                         {!trade.is_closed && (trade.buyer_confirmed || trade.seller_confirmed) && (
-                          <div className="flex gap-1.5 flex-wrap mt-1">
+                          <div className="flex gap-1.5 flex-wrap pt-0.5">
                             <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-semibold ${trade.buyer_confirmed ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/10 text-slate-500"}`}>
-                              B: {trade.buyer_confirmed ? "✓" : "…"}
+                              Buyer: {trade.buyer_confirmed ? "✓ Confirmed" : "Waiting…"}
                             </span>
-                            <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-semibold ${trade.seller_confirmed ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/10 text-slate-500"}`}>
-                              S: {trade.seller_confirmed ? "✓" : "…"}
+                            <span className={`text-[9px] rounded-full px-1.5 py-0.5 font-semibold ${trade.seller_confirmed ? "bg-cyan-500/20 text-cyan-400" : "bg-slate-500/10 text-slate-500"}`}>
+                              Seller: {trade.seller_confirmed ? "✓ Confirmed" : "Waiting…"}
                             </span>
                           </div>
                         )}
                         {trade.is_closed && (
-                          <span className="mt-1 inline-flex items-center gap-1 text-[9px] rounded-full px-1.5 py-0.5 bg-slate-500/20 text-slate-400 font-semibold">
+                          <span className="mt-1 inline-flex items-center gap-1 text-[9px] rounded-full px-2 py-0.5 bg-slate-500/20 text-slate-400 font-semibold">
                             <Lock size={8} /> Closed
                           </span>
                         )}
@@ -1056,9 +1056,9 @@ export default function AdminDashboardPage() {
                         {trade.buyer_confirmed && trade.seller_confirmed && !trade.is_closed && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleCloseTrade(trade.id); }}
-                            className="mt-1.5 w-full flex items-center justify-center gap-1 rounded-lg bg-amber-500 py-1 text-[10px] font-bold text-slate-950 hover:bg-amber-400 transition"
+                            className="mt-1.5 w-full flex items-center justify-center gap-1 rounded-lg bg-amber-400 py-1 text-[10px] font-bold text-slate-950 hover:bg-amber-300 transition shadow-sm"
                           >
-                            <CheckCircle2 size={10} /> Finalize &amp; Close Trade
+                            <CheckCircle2 size={11} /> Finalize &amp; Close Trade
                           </button>
                         )}
                       </div>
@@ -1073,32 +1073,32 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Chat & Mediation Actions (Right Column) */}
-            <div className="lg:col-span-7 rounded-2xl border border-white/[0.08] bg-[#111722] shadow-md flex flex-col h-[32rem]">
+            <div className="lg:col-span-7 rounded-2xl border border-white/[0.08] bg-[#111722] shadow-md flex flex-col h-[38rem] max-h-[75vh] overflow-hidden">
               {activeEscrowTrade ? (
                 <>
                   {/* Chat Header */}
-                  <div className="border-b border-white/[0.08] bg-[#0c1017] p-4 flex items-center justify-between rounded-t-2xl">
-                    <div>
+                  <div className="shrink-0 border-b border-white/[0.08] bg-[#0c1017] p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-t-2xl">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-amber-400">Trade #{activeEscrowTrade.id}</span>
-                        <h3 className="text-sm font-bold text-white">{activeEscrowTrade.channel_name}</h3>
+                        <span className="font-mono text-xs font-bold text-amber-400 shrink-0">Trade #{activeEscrowTrade.id}</span>
+                        <h3 className="text-sm font-bold text-white truncate">{activeEscrowTrade.channel_name}</h3>
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
+                      <p className="text-[11px] text-slate-400 mt-0.5 truncate">
                         Amount: <strong className="text-amber-300">{Number(activeEscrowTrade.amount).toLocaleString()} ETB</strong> &bull; Buyer: {activeEscrowTrade.buyer_name} &bull; Seller: {activeEscrowTrade.seller_name}
                       </p>
                     </div>
 
                     {activeEscrowTrade.status === "processing" && !activeEscrowTrade.is_closed && (
-                      <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                         {/* Prompt buyer instruction button */}
                         {!activeEscrowTrade.buyer_confirmed && (
                           <button
                             onClick={() => handleRequestBuyerConfirmation(activeEscrowTrade.id)}
-                            className="flex items-center gap-1 rounded-lg bg-teal-500/20 border border-teal-500/40 px-3 py-1.5 text-xs font-bold text-teal-300 hover:bg-teal-500/30 transition"
+                            className="flex items-center gap-1 rounded-lg bg-teal-500/20 border border-teal-500/40 px-2.5 py-1 text-[11px] font-bold text-teal-300 hover:bg-teal-500/30 transition"
                             title="Send official instruction asking buyer to verify and Mark as Complete"
                           >
-                            <MessageSquare size={13} />
-                            Prompt Buyer to Confirm
+                            <MessageSquare size={12} />
+                            Prompt Buyer
                           </button>
                         )}
 
@@ -1106,25 +1106,25 @@ export default function AdminDashboardPage() {
                         {activeEscrowTrade.buyer_confirmed && activeEscrowTrade.seller_confirmed && (
                           <button
                             onClick={() => handleCloseTrade(activeEscrowTrade.id)}
-                            className="flex items-center gap-1 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300 shadow-md transition"
+                            className="flex items-center gap-1 rounded-lg bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-slate-950 hover:bg-amber-300 shadow-md transition"
                             title="Finalize trade, release funds, and close conversation"
                           >
-                            <CheckCircle2 size={13} />
-                            Finalize &amp; Close Trade
+                            <CheckCircle2 size={12} />
+                            Finalize
                           </button>
                         )}
 
                         <button
                           onClick={() => handleEscrowAction(activeEscrowTrade.id, "approve")}
-                          className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition"
+                          className="rounded-lg bg-emerald-500 px-2.5 py-1 text-[11px] font-bold text-slate-950 hover:bg-emerald-400 transition"
                         >
-                          Release to Seller
+                          Release Funds
                         </button>
                         <button
                           onClick={() => handleEscrowAction(activeEscrowTrade.id, "cancel")}
-                          className="rounded-lg bg-rose-500/20 border border-rose-500/40 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition"
+                          className="rounded-lg bg-rose-500/20 border border-rose-500/40 px-2.5 py-1 text-[11px] font-bold text-rose-300 hover:bg-rose-500/30 transition"
                         >
-                          Refund Buyer
+                          Refund
                         </button>
                       </div>
                     )}

@@ -546,89 +546,103 @@ export default function InboxPage() {
 
       {/* ===== Escrow 3-Way Chat Modal ===== */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-2 sm:p-4 backdrop-blur-md">
-          <div className="flex h-[96vh] max-h-[860px] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c1017] shadow-2xl shadow-black/60">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 sm:p-4 md:p-6 backdrop-blur-md">
+          <div className="flex h-[88vh] max-h-[760px] min-h-[480px] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c1017] shadow-2xl shadow-black/80 my-auto">
 
-            {/* ── Compact Header ── */}
+            {/* ── Compact Unified Header ── */}
             <div className="shrink-0 bg-[#111722] border-b border-white/[0.08]">
               <div className="flex items-center justify-between gap-3 px-4 py-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex flex-col items-center justify-center size-8 rounded-lg bg-amber-400/10 border border-amber-400/20 shrink-0">
-                    <span className="font-mono text-[9px] font-bold text-amber-400 leading-none">ESC</span>
-                    <span className="font-mono text-[9px] font-bold text-amber-300 leading-none">#{selectedOrder.id}</span>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="flex items-center gap-1.5 rounded-lg bg-amber-400/10 border border-amber-400/20 px-2 py-1 shrink-0">
+                    <ShieldCheck size={14} className="text-amber-400" />
+                    <span className="font-mono text-xs font-bold text-amber-300">Trade #{selectedOrder.id}</span>
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-white truncate">{selectedOrder.channelName}</h3>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[10px] font-bold text-amber-300">{selectedOrder.price}</span>
-                      <span className="text-slate-600">·</span>
-                      <span className={`text-[10px] font-bold uppercase tracking-wide ${selectedOrder.isClosed ? "text-slate-400" : selectedOrder.status === "processing" ? "text-teal-400" : "text-emerald-400"}`}>
+                    <h3 className="text-sm font-bold text-white truncate flex items-center gap-2">
+                      <span>{selectedOrder.channelName}</span>
+                      <span className="text-[10px] font-semibold text-slate-400 capitalize px-2 py-0.5 rounded-full bg-white/5 border border-white/10">{selectedOrder.platform}</span>
+                    </h3>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-bold text-amber-300">{selectedOrder.price}</span>
+                      <span className="text-slate-600">&bull;</span>
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                        selectedOrder.isClosed ? "text-slate-400" : selectedOrder.status === "processing" ? "text-teal-400" : "text-emerald-400"
+                      }`}>
                         {selectedOrder.isClosed ? "CLOSED" : selectedOrder.status}
                       </span>
-                      <span className="text-slate-600">·</span>
-                      <span className="text-[10px] text-slate-400">{selectedOrder.platform}</span>
                     </div>
                   </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setSelectedOrder(null)}
-                  className="shrink-0 grid size-7 place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white transition"
+                  className="shrink-0 grid size-8 place-items-center rounded-xl text-slate-400 hover:bg-white/10 hover:text-white transition"
+                  title="Close modal"
                 >
-                  <X size={16} />
+                  <X size={18} />
                 </button>
               </div>
 
-              {/* Escrow / closed status strip */}
-              {selectedOrder.isClosed ? (
-                <div className="mx-3 mb-3 flex items-center gap-2 rounded-lg bg-slate-500/10 border border-slate-500/20 px-3 py-2 text-[11px] text-slate-400">
-                  <Lock size={12} className="shrink-0" />
-                  <span>Trade closed · use <strong>Chat with Admin</strong> for further help</span>
+              {/* Status and 3-Way Participants row */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] bg-[#0c1017]/80 px-4 py-2 text-[11px]">
+                <div className="flex items-center gap-1.5 text-teal-300/90 font-medium">
+                  {selectedOrder.isClosed ? (
+                    <>
+                      <Lock size={12} className="text-slate-400 shrink-0" />
+                      <span className="text-slate-400">Trade closed &bull; Use Chat with Admin for assistance</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={13} className="text-teal-400 shrink-0" />
+                      <span>Funds held in escrow &bull; Admin supervises ownership transfer</span>
+                    </>
+                  )}
                 </div>
-              ) : (
-                <div className="mx-3 mb-3 flex items-center gap-2 rounded-lg bg-teal-500/10 border border-teal-500/20 px-3 py-2 text-[11px] text-teal-300">
-                  <ShieldCheck size={12} className="shrink-0 text-teal-400" />
-                  <span>Funds locked in escrow · admin supervises ownership transfer</span>
-                </div>
-              )}
 
-              {/* Participants bar */}
-              <div className="flex items-center gap-2 px-4 pb-3">
-                <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5">
-                  <span className="size-1.5 rounded-full bg-emerald-400 inline-block" />
-                  <span className="text-[10px] font-semibold text-emerald-400">Buyer</span>
-                  {selectedOrder.buyerConfirmed && <CheckCircle2 size={9} className="text-emerald-400" />}
-                </div>
-                <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5">
-                  <span className="size-1.5 rounded-full bg-cyan-400 inline-block" />
-                  <span className="text-[10px] font-semibold text-cyan-400">Seller</span>
-                  {selectedOrder.sellerConfirmed && <CheckCircle2 size={9} className="text-cyan-400" />}
-                </div>
-                <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5">
-                  <span className="size-1.5 rounded-full bg-amber-400 inline-block" />
-                  <span className="text-[10px] font-semibold text-amber-400">Admin</span>
+                <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    selectedOrder.buyerConfirmed ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-emerald-500/10 text-emerald-400/80 border border-emerald-500/20"
+                  }`}>
+                    <span className="size-1.5 rounded-full bg-emerald-400" />
+                    <span>Buyer</span>
+                    {selectedOrder.buyerConfirmed && <CheckCircle2 size={10} className="text-emerald-400 ml-0.5" />}
+                  </div>
+                  <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    selectedOrder.sellerConfirmed ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" : "bg-cyan-500/10 text-cyan-400/80 border border-cyan-500/20"
+                  }`}>
+                    <span className="size-1.5 rounded-full bg-cyan-400" />
+                    <span>Seller</span>
+                    {selectedOrder.sellerConfirmed && <CheckCircle2 size={10} className="text-cyan-400 ml-0.5" />}
+                  </div>
+                  <div className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <span className="size-1.5 rounded-full bg-amber-400" />
+                    <span>Admin</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* ── Action banners (compact, inline) ── */}
+            {/* ── Action banners (compact, high-contrast) ── */}
 
             {/* Buyer: needs to confirm */}
             {!selectedOrder.isClosed && selectedOrder.status === "processing" && isBuyer(selectedOrder) && !selectedOrder.buyerConfirmed && (
-              <div className="shrink-0 flex items-center gap-3 border-b border-emerald-500/20 bg-emerald-950/30 px-4 py-2.5">
-                <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                <p className="flex-1 text-[11px] text-slate-300">
-                  <span className="font-bold text-emerald-400">Admin: </span>
-                  Received the channel? Click to confirm.
-                </p>
+              <div className="shrink-0 flex items-center justify-between gap-3 border-b border-emerald-500/30 bg-emerald-950/40 px-4 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+                  <p className="text-[11px] text-slate-200">
+                    <span className="font-bold text-emerald-400">Admin instruction: </span>
+                    If you have received channel ownership and verified everything, click Mark as Complete.
+                  </p>
+                </div>
                 <button
                   type="button"
                   disabled={confirmingCompletion}
                   onClick={handleBuyerConfirm}
-                  className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-emerald-400 active:scale-95 disabled:opacity-60 transition"
+                  className="shrink-0 flex items-center gap-1.5 rounded-xl bg-emerald-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-300 active:scale-95 disabled:opacity-60 transition shadow-md shadow-emerald-500/20"
                 >
-                  <CheckCircle2 size={12} />
-                  {confirmingCompletion ? "Confirming..." : "Mark as Complete"}
+                  <CheckCircle2 size={13} className="text-slate-950" />
+                  <span>{confirmingCompletion ? "Confirming..." : "Mark as Complete"}</span>
                 </button>
               </div>
             )}
@@ -646,23 +660,25 @@ export default function InboxPage() {
               </div>
             )}
 
-            {/* Seller confirmation banner — shown to seller when processing and not yet confirmed */}
+            {/* Seller confirmation banner */}
             {!selectedOrder.isClosed && selectedOrder.status === "processing" && isSeller(selectedOrder) && !selectedOrder.sellerConfirmed && (
-              <div className="shrink-0 flex items-center gap-3 border-b border-cyan-500/20 bg-cyan-950/30 px-4 py-2.5">
-                <CheckCircle2 size={14} className="text-cyan-400 shrink-0" />
-                <p className="flex-1 text-[11px] text-slate-300">
-                  <span className="font-bold text-cyan-400">Transfer: </span>
-                  Transferred channel credentials? Click to confirm.
-                </p>
-                  <button
-                    type="button"
-                    disabled={confirmingCompletion}
-                    onClick={handleSellerConfirm}
-                    className="shrink-0 flex items-center gap-1 rounded-lg bg-cyan-500 px-3 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-cyan-400 active:scale-95 disabled:opacity-60 transition"
-                  >
-                    <CheckCircle2 size={12} />
-                    {confirmingCompletion ? "Confirming..." : "Confirm Transfer"}
-                  </button>
+              <div className="shrink-0 flex items-center justify-between gap-3 border-b border-cyan-500/30 bg-cyan-950/40 px-4 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <CheckCircle2 size={15} className="text-cyan-400 shrink-0" />
+                  <p className="text-[11px] text-slate-200">
+                    <span className="font-bold text-cyan-400">Seller instruction: </span>
+                    Transferred credentials and ownership to buyer? Click Confirm Transfer.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={confirmingCompletion}
+                  onClick={handleSellerConfirm}
+                  className="shrink-0 flex items-center gap-1.5 rounded-xl bg-cyan-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-300 active:scale-95 disabled:opacity-60 transition shadow-md shadow-cyan-500/20"
+                >
+                  <CheckCircle2 size={13} className="text-slate-950" />
+                  <span>{confirmingCompletion ? "Confirming..." : "Confirm Transfer"}</span>
+                </button>
               </div>
             )}
 
@@ -683,7 +699,7 @@ export default function InboxPage() {
             {!selectedOrder.isClosed && selectedOrder.buyerConfirmed && selectedOrder.sellerConfirmed && (
               <div className="shrink-0 flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-[11px] text-amber-300 font-semibold">
                 <Sparkles size={13} className="text-amber-400 shrink-0" />
-                <span>Both parties confirmed! Admin will finalize and close this trade.</span>
+                <span>Both parties confirmed! Admin will finalize and release payment.</span>
               </div>
             )}
 
@@ -814,16 +830,19 @@ export default function InboxPage() {
             {/* ── Bottom input bar ── */}
             {selectedOrder.isClosed ? (
               <div className="shrink-0 flex items-center justify-center gap-2 border-t border-white/[0.08] bg-[#0c1017] p-3 text-xs text-slate-500">
-                <Lock size={12} />
-                <span>Conversation closed · use Chat with Admin for support</span>
+                <Lock size={13} className="text-slate-500" />
+                <span>Trade conversation closed &bull; Use Chat with Admin for support</span>
               </div>
             ) : (
-              <div className="shrink-0 border-t border-white/[0.08] bg-[#0c1017] px-3 py-2.5">
+              <div className="shrink-0 border-t border-white/[0.08] bg-[#111722] p-3 sm:px-4 sm:py-3">
                 {uploadingFile && (
-                  <p className="mb-1.5 text-center text-[10px] text-teal-400 animate-pulse">Uploading...</p>
+                  <p className="mb-2 text-center text-[10px] font-semibold text-teal-400 animate-pulse">Uploading attachment...</p>
                 )}
                 {isRecording && (
-                  <p className="mb-1.5 text-center text-[10px] text-rose-400 animate-pulse">● Recording — click stop when done</p>
+                  <div className="mb-2 flex items-center justify-center gap-2 text-[11px] font-bold text-rose-400 animate-pulse">
+                    <span className="size-2 rounded-full bg-rose-500" />
+                    <span>Recording voice note... click stop when done</span>
+                  </div>
                 )}
                 <form onSubmit={handleSendText} className="flex items-center gap-2">
                   {/* hidden file input */}
@@ -832,10 +851,10 @@ export default function InboxPage() {
                   {/* image button */}
                   <button
                     type="button"
-                    title="Send image"
+                    title="Send screenshot or image"
                     disabled={uploadingFile || isRecording}
                     onClick={() => imageInputRef.current?.click()}
-                    className="shrink-0 grid size-9 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-400 hover:border-amber-500/40 hover:text-amber-400 disabled:opacity-40 transition"
+                    className="shrink-0 grid size-9 place-items-center rounded-xl border border-white/10 bg-[#0c1017] text-slate-400 hover:border-amber-400/50 hover:text-amber-400 disabled:opacity-40 transition shadow-sm"
                   >
                     <ImageIcon size={16} />
                   </button>
@@ -843,16 +862,16 @@ export default function InboxPage() {
                   {/* mic button */}
                   <button
                     type="button"
-                    title={isRecording ? "Stop recording" : "Record voice"}
+                    title={isRecording ? "Stop recording" : "Record voice note"}
                     disabled={uploadingFile}
                     onClick={isRecording ? stopRecording : startRecording}
-                    className={`shrink-0 grid size-9 place-items-center rounded-xl border transition ${
+                    className={`shrink-0 grid size-9 place-items-center rounded-xl border transition shadow-sm ${
                       isRecording
-                        ? "border-rose-500/50 bg-rose-500/15 text-rose-400 animate-pulse"
-                        : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-teal-500/40 hover:text-teal-400"
+                        ? "border-rose-500 bg-rose-500/20 text-rose-400 animate-pulse ring-2 ring-rose-500/30"
+                        : "border-white/10 bg-[#0c1017] text-slate-400 hover:border-teal-400/50 hover:text-teal-400"
                     } disabled:opacity-40`}
                   >
-                    {isRecording ? <Square size={14} /> : <Mic size={16} />}
+                    {isRecording ? <Square size={14} className="fill-rose-400" /> : <Mic size={16} />}
                   </button>
 
                   {/* text input */}
@@ -861,15 +880,15 @@ export default function InboxPage() {
                     value={orderChatInput}
                     onChange={(e) => setOrderChatInput(e.target.value)}
                     disabled={isRecording || uploadingFile}
-                    placeholder="Type a message…"
-                    className="flex-1 min-w-0 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white placeholder-slate-600 focus:border-teal-500/50 focus:outline-none focus:bg-white/[0.06] disabled:opacity-50 transition"
+                    placeholder="Type message to buyer, seller & admin..."
+                    className="flex-1 min-w-0 rounded-xl border border-white/10 bg-[#0c1017] px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-teal-400 focus:outline-none transition"
                   />
 
                   {/* send button */}
                   <button
                     type="submit"
                     disabled={!orderChatInput.trim() || sendingMessage || isRecording || uploadingFile}
-                    className="shrink-0 grid size-9 place-items-center rounded-xl bg-teal-500 text-slate-950 shadow-md hover:bg-teal-400 active:scale-95 disabled:opacity-40 transition"
+                    className="shrink-0 grid size-9 place-items-center rounded-xl bg-teal-500 text-slate-950 font-bold shadow-md hover:bg-teal-400 active:scale-95 disabled:opacity-30 transition"
                   >
                     <Send size={15} />
                   </button>
