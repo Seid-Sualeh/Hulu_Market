@@ -8,13 +8,14 @@ dist/
 build/
 coverage/
 
-# Environment files (keep examples)
-
-
+# Environment files (NEVER commit secrets or real credentials)
 .env
-.env.example
-
-
+.env.*
+*.env
+*.env.*
+**/.env
+**/.env.*
+!**/.env.example
 
 # Local tooling
 .DS_Store

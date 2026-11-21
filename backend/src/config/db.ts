@@ -1,30 +1,64 @@
+import "dotenv/config";
 import mysql from "mysql2/promise";
 import type { Pool, PoolOptions } from "mysql2/promise";
 import bcrypt from "bcryptjs";
 
-const dbHost = process.env.DB_HOST || "localhost";
-const dbPort = process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 3306;
-const dbUser = process.env.DB_USER || "root";
-const dbPassword = process.env.DB_PASSWORD || "";
-const dbName = process.env.DB_NAME || "hulu_market";
+// Determine if we should connect using the Production Database URL
+export const isProduction =
+  process.env.NODE_ENV === "production" ||
+  Boolean(process.env.DATABASE_URL) ||
+  process.env.USE_PRODUCTION_DB === "true";
 
-const poolConfig: PoolOptions = process.env.DATABASE_URL
-  ? {
-      uri: process.env.DATABASE_URL,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-    }
-  : {
-      host: dbHost,
-      port: dbPort,
-      user: dbUser,
-      password: dbPassword,
-      database: dbName,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-    };
+// Development local MySQL configurations (loaded from environment variables)
+const devDbHost = process.env.DB_HOST || "localhost";
+const devDbPort = process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 3306;
+const devDbUser = process.env.DB_USER || "Hulu-market";
+const devDbPassword = process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : "Hulu-market";
+const devDbName = process.env.DB_NAME || "Hulu_market";
+
+/**
+ * Configure Pool Options based on environment
+ */
+let poolConfig: PoolOptions;
+export let dbTargetDescription: string;
+
+if (isProduction) {
+  // Read production connection URI exclusively from environment variables
+  const rawUri =
+    process.env.DATABASE_URL ||
+    process.env.PRODUCTION_DATABASE_URL ||
+    "";
+
+  if (!rawUri) {
+    throw new Error(
+      "[Database Error] Running in production mode, but neither DATABASE_URL nor PRODUCTION_DATABASE_URL is set."
+    );
+  }
+
+  // Clean URI query string (e.g. ?ssl-mode=REQUIRED) so mysql2 does not trigger configuration warnings
+  const cleanUri = rawUri.replace(/\?.*$/, "");
+
+  poolConfig = {
+    uri: cleanUri,
+    ssl: { rejectUnauthorized: false },
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+  };
+  dbTargetDescription = `Managed MySQL Cluster (Production)`;
+} else {
+  poolConfig = {
+    host: devDbHost,
+    port: devDbPort,
+    user: devDbUser,
+    password: devDbPassword,
+    database: devDbName,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+  };
+  dbTargetDescription = `Local MySQL (Development) - ${devDbUser}@${devDbHost}:${devDbPort}/${devDbName}`;
+}
 
 export const pool: Pool = mysql.createPool(poolConfig);
 
@@ -33,18 +67,24 @@ export const pool: Pool = mysql.createPool(poolConfig);
  */
 export async function initDatabase(): Promise<boolean> {
   try {
-    if (!process.env.DATABASE_URL) {
+    // Only attempt CREATE DATABASE IF NOT EXISTS for local development server
+    if (!isProduction) {
       try {
         const rootConn = await mysql.createConnection({
-          host: dbHost,
-          port: dbPort,
-          user: dbUser,
-          password: dbPassword,
+          host: devDbHost,
+          port: devDbPort,
+          user: devDbUser,
+          password: devDbPassword,
         });
-        await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+        await rootConn.query(
+          `CREATE DATABASE IF NOT EXISTS \`${devDbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
+        );
         await rootConn.end();
       } catch (err: unknown) {
-        console.debug("Note: Automatic CREATE DATABASE skipped (permissions or managed database):", (err as Error).message);
+        console.debug(
+          "Note: Automatic CREATE DATABASE skipped (permissions or managed database):",
+          (err as Error).message
+        );
       }
     }
 
@@ -102,7 +142,9 @@ export async function initDatabase(): Promise<boolean> {
       await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS seller_username VARCHAR(150) NULL`);
       await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS seller_phone VARCHAR(50) NULL`);
       await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS rejection_reason TEXT NULL`);
-    } catch { /* columns already exist */ }
+    } catch {
+      /* columns already exist */
+    }
 
     // 3. Transactions & Escrow table
     await conn.query(`
@@ -124,10 +166,13 @@ export async function initDatabase(): Promise<boolean> {
         INDEX idx_tx_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
     // Migrate: add screenshot_url if table already existed without it
     try {
       await conn.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS screenshot_url VARCHAR(500) NULL`);
-    } catch { /* column already exists */ }
+    } catch {
+      /* column already exists */
+    }
 
     // 4. Escrow P2P Orders table
     await conn.query(`
@@ -154,6 +199,7 @@ export async function initDatabase(): Promise<boolean> {
         INDEX idx_escrow_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
     // Migrate: add new columns if table already existed
     try {
       await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS buyer_confirmed BOOLEAN NOT NULL DEFAULT FALSE`);
@@ -161,7 +207,9 @@ export async function initDatabase(): Promise<boolean> {
       await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS buyer_confirmation_requested BOOLEAN NOT NULL DEFAULT FALSE`);
       await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS is_closed BOOLEAN NOT NULL DEFAULT FALSE`);
       await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP NULL`);
-    } catch { /* columns already exist */ }
+    } catch {
+      /* columns already exist */
+    }
 
     // 5. Escrow Chat Messages (Supervised by Admin, Seller, and Buyer)
     await conn.query(`
@@ -178,11 +226,14 @@ export async function initDatabase(): Promise<boolean> {
         INDEX idx_msg_order (order_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
     // Migrate: add new columns if table already existed
     try {
       await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS message_type ENUM('text','voice','image') NOT NULL DEFAULT 'text'`);
       await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS attachment_url VARCHAR(500) NULL`);
-    } catch { /* columns already exist */ }
+    } catch {
+      /* columns already exist */
+    }
 
     // 6. User Notifications table
     await conn.query(`
@@ -220,20 +271,23 @@ export async function initDatabase(): Promise<boolean> {
 
     if (existingAdmins.length === 0) {
       const adminPass = await bcrypt.hash("admin123", 10);
-      await conn.query(`
+      await conn.query(
+        `
         INSERT INTO users (first_name, last_name, email, phone, password_hash, balance, role)
         VALUES ('System', 'Admin', 'admin@hulumarket.com', '+251900000000', ?, 10000.00, 'admin')
         ON DUPLICATE KEY UPDATE role = 'admin'
-      `, [adminPass]);
+      `,
+        [adminPass]
+      );
       console.log("[Database] Initial admin user initialized: admin@hulumarket.com / admin123");
     }
 
     conn.release();
-    console.log(`[Database] MySQL connected & all tables ready on ${dbHost}:${dbPort}/${dbName}`);
+    console.log(`[Database] MySQL connected & all tables ready on ${dbTargetDescription}`);
     return true;
   } catch (err: unknown) {
     const error = err as Error;
-    console.warn(`[Database Warning] Could not connect to MySQL (${error.message}).`);
+    console.warn(`[Database Warning] Could not connect to MySQL (${error.message}). Target: ${dbTargetDescription}`);
     return false;
   }
 }
