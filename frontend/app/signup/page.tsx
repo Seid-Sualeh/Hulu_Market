@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Eye, EyeOff, Lock, Mail, Phone, User, X } from "lucide-react";
 import { signInUser } from "@/lib/auth";
 import { fetchBackend } from "@/lib/api";
+import AuthBackground from "@/components/auth/AuthBackground";
 
 function SignUpContent() {
   const router = useRouter();
@@ -77,19 +78,22 @@ function SignUpContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0f17] flex flex-col items-center justify-center p-4 relative select-none">
-      <div className="max-w-md w-full flex flex-col items-center space-y-6 relative z-10 animate-in fade-in zoom-in-95 duration-200">
-        {/* Top Hulu Market Logo Badge */}
-        <div className="w-14 h-14 rounded-2xl border border-[#d4af37]/60 bg-[#141b27]/90 overflow-hidden p-1 shadow-lg shadow-amber-500/15 mb-1">
-          <img src="/logo.png" alt="Hulu Market" className="w-full h-full object-cover rounded-xl" />
+    <AuthBackground>
+      <div className="max-w-md w-full rounded-3xl border border-white/10 bg-[#0d131f]/85 backdrop-blur-2xl p-6 sm:p-8 shadow-2xl shadow-black/90 flex flex-col items-center space-y-6 relative z-10 transition-all hover:border-amber-400/30 animate-in fade-in zoom-in-95 duration-200">
+        {/* Top Glowing Logo Badge */}
+        <div className="relative group">
+          <div className="absolute -inset-1 rounded-2xl bg-gradient-to-tr from-amber-500 via-yellow-400 to-amber-600 opacity-60 blur-md group-hover:opacity-90 transition duration-300 animate-pulse" />
+          <div className="relative w-16 h-16 rounded-2xl border-2 border-[#d4af37]/80 bg-[#141b27] overflow-hidden p-1 shadow-2xl">
+            <img src="/logo.png" alt="Hulu Market" className="w-full h-full object-cover rounded-xl" />
+          </div>
         </div>
 
-        {/* Heading matching signup-page.png */}
+        {/* Heading */}
         <div className="text-center space-y-1">
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-wider">
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-wider">
             REGISTER
           </h1>
-          <p className="text-xs text-amber-300/80 font-medium">
+          <p className="text-xs sm:text-sm text-amber-300/80 font-medium">
             Everything You Need. One Marketplace.
           </p>
         </div>
@@ -221,7 +225,7 @@ function SignUpContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 rounded-xl bg-[#d4af37] hover:bg-[#c49e29] active:scale-[0.99] text-slate-950 font-bold uppercase tracking-wider text-xs md:text-sm transition-all shadow-lg shadow-amber-500/15"
+              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:brightness-110 active:scale-[0.99] text-slate-950 font-extrabold uppercase tracking-wider text-xs md:text-sm transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading ? "CREATING ACCOUNT..." : "CREATE ACCOUNT"}
             </button>
@@ -233,19 +237,19 @@ function SignUpContent() {
           Already have an account?{" "}
           <Link
             href={`/signin?redirect=${encodeURIComponent(redirect)}`}
-            className="text-[#d4af37] hover:text-amber-300 font-bold transition-colors ml-1 uppercase"
+            className="text-amber-400 hover:text-amber-300 font-bold transition-colors ml-1 uppercase hover:underline"
           >
             LOG IN
           </Link>
         </p>
       </div>
-    </div>
+    </AuthBackground>
   );
 }
 
 export default function SignUpPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0b0f17]" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#070a10]" />}>
       <SignUpContent />
     </Suspense>
   );
