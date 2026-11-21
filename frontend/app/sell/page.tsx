@@ -126,7 +126,13 @@ function SellPageInner() {
           setPhoneNumber(ch.seller_phone || "");
           if (ch.screenshot_url) {
             setExistingScreenshotUrl(ch.screenshot_url);
-            setPreviewImage(`http://localhost:4001${ch.screenshot_url}`);
+            setPreviewImage(
+              ch.screenshot_url.startsWith("http")
+                ? ch.screenshot_url
+                : ch.screenshot_url.startsWith("/")
+                ? ch.screenshot_url
+                : `/${ch.screenshot_url}`
+            );
           }
           if (ch.rejection_reason) {
             setRejectionNotice(ch.rejection_reason);

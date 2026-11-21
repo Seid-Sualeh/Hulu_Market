@@ -226,16 +226,20 @@ export default function ChannelCard({
                   src={
                     channel.screenshot_url.startsWith("http")
                       ? channel.screenshot_url
-                      : `http://localhost:4001${channel.screenshot_url.startsWith("/") ? "" : "/"}${channel.screenshot_url}`
+                      : channel.screenshot_url.startsWith("/")
+                      ? channel.screenshot_url
+                      : `/${channel.screenshot_url}`
                   }
                   alt={channel.name}
                   className="size-full object-cover"
                   onError={(e) => {
                     const target = e.currentTarget as HTMLImageElement;
-                    if (target.src.includes(":4001") && channel.screenshot_url) {
-                      target.src = channel.screenshot_url.startsWith("/")
-                        ? channel.screenshot_url
-                        : `/${channel.screenshot_url}`;
+                    const host =
+                      typeof window !== "undefined" && window.location.hostname !== "localhost"
+                        ? "https://hulu-market-backend.onrender.com"
+                        : "http://localhost:4001";
+                    if (!target.src.includes(host) && channel.screenshot_url) {
+                      target.src = `${host}${channel.screenshot_url.startsWith("/") ? "" : "/"}${channel.screenshot_url}`;
                     } else {
                       target.style.display = "none";
                     }

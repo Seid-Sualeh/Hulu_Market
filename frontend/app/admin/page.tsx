@@ -38,6 +38,12 @@ import {
 import { useAuth, signInUser } from "@/lib/auth";
 import { fetchBackend } from "@/lib/api";
 
+function formatUploadUrl(url?: string | null): string {
+  if (!url) return "";
+  if (url.startsWith("http")) return url;
+  return url.startsWith("/") ? url : `/${url}`;
+}
+
 type AdminTab = "overview" | "approvals" | "inbox" | "users" | "channels" | "transactions";
 
 interface AdminStats {
@@ -768,14 +774,14 @@ export default function AdminDashboardPage() {
                       <div className="flex flex-col items-center md:items-end gap-2 shrink-0">
                         {ch.screenshot_url ? (
                           <a
-                            href={`http://localhost:4001${ch.screenshot_url}`}
+                            href={formatUploadUrl(ch.screenshot_url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Click to inspect full resolution dashboard screenshot"
                             className="group block"
                           >
                             <img
-                              src={`http://localhost:4001${ch.screenshot_url}`}
+                              src={formatUploadUrl(ch.screenshot_url)}
                               alt="Dashboard screenshot"
                               className="h-24 w-36 rounded-xl object-cover border border-teal-500/30 group-hover:border-teal-400 transition cursor-pointer shadow-lg"
                             />
@@ -872,14 +878,14 @@ export default function AdminDashboardPage() {
                       {/* Payment Screenshot Thumbnail */}
                       {tx.screenshot_url && (
                         <a
-                          href={`http://localhost:4001${tx.screenshot_url}`}
+                          href={formatUploadUrl(tx.screenshot_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           title="View full payment screenshot"
                           className="shrink-0"
                         >
                           <img
-                            src={`http://localhost:4001${tx.screenshot_url}`}
+                            src={formatUploadUrl(tx.screenshot_url)}
                             alt="Payment screenshot"
                             className="h-16 w-20 rounded-lg object-cover border border-amber-500/30 hover:border-amber-400 transition cursor-pointer shadow-md"
                           />
@@ -1157,15 +1163,15 @@ export default function AdminDashboardPage() {
                                 </span>
                               </div>
                               {m.message_type === "image" && m.attachment_url ? (
-                                <a href={`http://localhost:4001${m.attachment_url}`} target="_blank" rel="noopener noreferrer">
+                                <a href={formatUploadUrl(m.attachment_url)} target="_blank" rel="noopener noreferrer">
                                   <img
-                                    src={`http://localhost:4001${m.attachment_url}`}
+                                    src={formatUploadUrl(m.attachment_url)}
                                     alt="Shared image"
                                     className="max-w-full rounded-lg max-h-32 object-contain mt-1 border border-white/10 hover:border-amber-500/40 transition cursor-pointer"
                                   />
                                 </a>
                               ) : m.message_type === "voice" && m.attachment_url ? (
-                                <audio controls src={`http://localhost:4001${m.attachment_url}`} className="w-full h-8 rounded mt-1" />
+                                <audio controls src={formatUploadUrl(m.attachment_url)} className="w-full h-8 rounded mt-1" />
                               ) : (
                                 <p>{m.message}</p>
                               )}

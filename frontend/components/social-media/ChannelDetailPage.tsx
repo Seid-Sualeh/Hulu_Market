@@ -43,7 +43,7 @@ export default function ChannelDetailPage({
   const buildInitialSrc = (url?: string | null) => {
     if (!url) return null;
     if (url.startsWith("http") || url.startsWith("data:")) return url;
-    return `http://localhost:4001${url.startsWith("/") ? "" : "/"}${url}`;
+    return url.startsWith("/") ? url : `/${url}`;
   };
 
   const [screenshotSrc, setScreenshotSrc] = useState<string | null>(buildInitialSrc(rawScreenshot));
@@ -55,10 +55,12 @@ export default function ChannelDetailPage({
   }, [channel.screenshot_url]);
 
   const handleImageError = () => {
-    if (screenshotSrc && screenshotSrc.includes(":4001") && rawScreenshot) {
-      // Fallback from port 4001 to relative path /uploads/... (proxied by Next.js)
-      const rel = rawScreenshot.startsWith("/") ? rawScreenshot : `/${rawScreenshot}`;
-      setScreenshotSrc(rel);
+    if (screenshotSrc && !screenshotSrc.startsWith("http") && rawScreenshot) {
+      const host =
+        typeof window !== "undefined" && window.location.hostname !== "localhost"
+          ? "https://hulu-market-backend.onrender.com"
+          : "http://localhost:4001";
+      setScreenshotSrc(`${host}${rawScreenshot.startsWith("/") ? "" : "/"}${rawScreenshot}`);
     } else {
       setHasImageError(true);
     }

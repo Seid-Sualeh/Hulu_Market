@@ -460,7 +460,13 @@ export default function TransactionsPage() {
                 <div className="pt-2 border-t border-slate-800 space-y-1.5">
                   <span className="text-slate-400 block">Payment Screenshot Proof:</span>
                   <a
-                    href={`http://localhost:4001${selectedTxn.screenshot_url}`}
+                    href={
+                      selectedTxn.screenshot_url.startsWith("http")
+                        ? selectedTxn.screenshot_url
+                        : selectedTxn.screenshot_url.startsWith("/")
+                        ? selectedTxn.screenshot_url
+                        : `/${selectedTxn.screenshot_url}`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-xs text-teal-400 hover:underline"

@@ -58,7 +58,7 @@ interface EscrowMessage {
   created_at: string;
 }
 
-const BACKEND = "http://localhost:4001";
+
 
 export default function InboxPage() {
   const { user } = useAuth();
@@ -386,7 +386,7 @@ export default function InboxPage() {
   const resolveUrl = (url: string | null) => {
     if (!url) return "";
     if (url.startsWith("http")) return url;
-    return `${BACKEND}${url}`;
+    return url.startsWith("/") ? url : `/${url}`;
   };
 
   return (

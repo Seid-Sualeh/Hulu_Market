@@ -5,7 +5,13 @@
  */
 export function getApiBaseUrl(): string {
   if (typeof window === "undefined") {
-    return process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:4001";
+    return (
+      process.env.BACKEND_URL ||
+      process.env.NEXT_PUBLIC_BACKEND_URL ||
+      (process.env.NODE_ENV === "production"
+        ? "https://hulu-market-backend.onrender.com"
+        : "http://localhost:4001")
+    );
   }
   return process.env.NEXT_PUBLIC_API_URL || "/api";
 }
