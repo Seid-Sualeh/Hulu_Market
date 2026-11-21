@@ -25,9 +25,19 @@ export function createApp(frontendOrigin?: string) {
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,
-      limit: 100,
+      limit: process.env.NODE_ENV === "production" ? 2500 : 100000,
       standardHeaders: "draft-8",
       legacyHeaders: false,
+      skip: (req) => {
+        // Skip rate-limiting in development or for local proxy / loopback requests
+        if (process.env.NODE_ENV !== "production") return true;
+        const ip = req.ip || req.socket.remoteAddress || "";
+        return ip.includes("127.0.0.1") || ip.includes("::1") || ip.includes("localhost");
+      },
+      message: {
+        success: false,
+        error: "Too many requests from this IP, please try again after 15 minutes.",
+      },
     }),
   );
 

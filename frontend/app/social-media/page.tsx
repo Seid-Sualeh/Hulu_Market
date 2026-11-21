@@ -50,37 +50,41 @@ export default function SocialMediaPage() {
     } catch {}
   }, []);
 
-  const loadChannels = () => {
+  const loadChannels = async () => {
     setLoadingChannels(true);
-    fetch("/api/channels")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.channels)) {
-          const mapped: ChannelItem[] = data.channels.map((c: any) => ({
-            id: `db-${c.id}`,
-            dbId: c.id,
-            sellerId: c.seller_id,
-            sellerName: c.seller_name || "Verified Seller",
-            name: c.name,
-            platform: (c.platform || "telegram").toLowerCase() as PlatformType,
-            category: c.category || "General",
-            followers: c.subscribers || "0",
-            engagement: c.views_or_likes || "Active",
-            price: `${Number(c.price).toLocaleString()} ETB`,
-            rawPrice: Number(c.price),
-            linkText: c.name,
-            linkUrl: c.link_url || "#",
-            featured: false,
-          }));
-          setDbChannels(mapped);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load live channels:", err);
-      })
-      .finally(() => {
-        setLoadingChannels(false);
-      });
+    try {
+      const res = await fetch("/api/channels");
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        const text = await res.text();
+        console.warn("[Channels API non-JSON response]:", text);
+        return;
+      }
+      const data = await res.json();
+      if (data.success && Array.isArray(data.channels)) {
+        const mapped: ChannelItem[] = data.channels.map((c: any) => ({
+          id: `db-${c.id}`,
+          dbId: c.id,
+          sellerId: c.seller_id,
+          sellerName: c.seller_name || "Verified Seller",
+          name: c.name,
+          platform: (c.platform || "telegram").toLowerCase() as PlatformType,
+          category: c.category || "General",
+          followers: c.subscribers || "0",
+          engagement: c.views_or_likes || "Active",
+          price: `${Number(c.price).toLocaleString()} ETB`,
+          rawPrice: Number(c.price),
+          linkText: c.name,
+          linkUrl: c.link_url || "#",
+          featured: false,
+        }));
+        setDbChannels(mapped);
+      }
+    } catch (err) {
+      console.error("Failed to load live channels:", err);
+    } finally {
+      setLoadingChannels(false);
+    }
   };
 
   useEffect(() => {
