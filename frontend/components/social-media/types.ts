@@ -29,4 +29,7 @@ export interface ChannelItem {
   dbId?: number;
   sellerId?: number | null;
   sellerName?: string;
+  description?: string;
+  screenshot_url?: string | null;
+  views_or_likes?: string;
 }

@@ -6,6 +6,7 @@ import { ArrowDownAZ, ArrowUpDown, Coins, Filter, Loader2, Search, SlidersHorizo
 import PlatformFilter from "@/components/social-media/PlatformFilter";
 import ChannelCard from "@/components/social-media/ChannelCard";
 import PromoBanner from "@/components/social-media/PromoBanner";
+import ChannelDetailPage from "@/components/social-media/ChannelDetailPage";
 import { ChannelItem, PlatformType } from "@/components/social-media/types";
 import { isUserSignedIn, useAuth } from "@/lib/auth";
 
@@ -71,11 +72,19 @@ export default function SocialMediaPage() {
           platform: (c.platform || "telegram").toLowerCase() as PlatformType,
           category: c.category || "General",
           followers: c.subscribers || "0",
+          followersLabel: (c.platform || "").toLowerCase() === "youtube" ? "Subscribers" : "Followers",
           engagement: c.views_or_likes || "Active",
+          secondaryStat: c.views_or_likes || "Active",
+          views_or_likes: c.views_or_likes || "Active",
           price: `${Number(c.price).toLocaleString()} ETB`,
           rawPrice: Number(c.price),
           linkText: c.name,
           linkUrl: c.link_url || "#",
+          description: c.description || "",
+          screenshot_url: c.screenshot_url || null,
+          isNew: true,
+          badgeTag: "Very Good Price",
+          status: "ACTIVE",
           featured: false,
         }));
         setDbChannels(mapped);
@@ -90,6 +99,41 @@ export default function SocialMediaPage() {
   useEffect(() => {
     loadChannels();
   }, []);
+
+  // Sync selectedChannel with URL query param if present
+  useEffect(() => {
+    if (dbChannels.length > 0) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const channelParam = params.get("channel") || params.get("detail");
+        if (channelParam) {
+          const found = dbChannels.find((c) => c.id === channelParam || String(c.dbId) === channelParam);
+          if (found) {
+            setSelectedChannel(found);
+          }
+        }
+      } catch {}
+    }
+  }, [dbChannels]);
+
+  const handleDetails = (channel: ChannelItem) => {
+    setSelectedChannel(channel);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("channel", channel.id);
+      window.history.pushState({}, "", url.toString());
+    } catch {}
+  };
+
+  const handleBackFromDetails = () => {
+    setSelectedChannel(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("channel");
+      url.searchParams.delete("detail");
+      window.history.pushState({}, "", url.pathname + (url.search ? url.search : ""));
+    } catch {}
+  };
 
   const filteredChannels = useMemo(() => {
     // Only real database channels (no demo data)
@@ -199,6 +243,18 @@ export default function SocialMediaPage() {
       setBuyingChannelId(null);
     }
   };
+
+  // If a channel is selected for details, render the full dedicated Detail Page design
+  if (selectedChannel) {
+    return (
+      <ChannelDetailPage
+        channel={selectedChannel}
+        onBack={handleBackFromDetails}
+        onBuy={handleBuy}
+        isBuying={buyingChannelId === selectedChannel.id}
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-16">
@@ -484,7 +540,7 @@ export default function SocialMediaPage() {
                   key={ch.id}
                   channel={ch}
                   onBuy={handleBuy}
-                  onDetails={(c) => setSelectedChannel(c)}
+                  onDetails={handleDetails}
                   isBuying={buyingChannelId === ch.id}
                 />
               ))}
@@ -502,7 +558,7 @@ export default function SocialMediaPage() {
                   key={ch.id}
                   channel={ch}
                   onBuy={handleBuy}
-                  onDetails={(c) => setSelectedChannel(c)}
+                  onDetails={handleDetails}
                   isBuying={buyingChannelId === ch.id}
                 />
               ))}
@@ -524,70 +580,6 @@ export default function SocialMediaPage() {
           ETB
         </div>
       </div>
-
-      {/* Details Dialog Modal */}
-      {selectedChannel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#111722] p-6 shadow-2xl">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-teal-400">
-                  Channel Details
-                </span>
-                <h3 className="mt-1 text-xl font-bold text-white">{selectedChannel.name}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedChannel(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-white"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3 text-sm text-slate-300">
-              <div className="flex justify-between border-b border-white/[0.06] py-2">
-                <span className="text-slate-400">Platform</span>
-                <span className="font-semibold text-white capitalize">{selectedChannel.platform}</span>
-              </div>
-              <div className="flex justify-between border-b border-white/[0.06] py-2">
-                <span className="text-slate-400">Category</span>
-                <span className="font-semibold text-white">{selectedChannel.category}</span>
-              </div>
-              <div className="flex justify-between border-b border-white/[0.06] py-2">
-                <span className="text-slate-400">Followers / Audience</span>
-                <span className="font-semibold text-white">{selectedChannel.followers}</span>
-              </div>
-              <div className="flex justify-between border-b border-white/[0.06] py-2">
-                <span className="text-slate-400">Asking Price</span>
-                <span className="text-lg font-bold text-amber-400">{selectedChannel.price}</span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedChannel(null)}
-                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                disabled={!!buyingChannelId}
-                onClick={() => {
-                  handleBuy(selectedChannel);
-                  setSelectedChannel(null);
-                }}
-                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-500 shadow-md disabled:opacity-60"
-              >
-                {buyingChannelId && <Loader2 size={14} className="animate-spin" />}
-                Buy Now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
