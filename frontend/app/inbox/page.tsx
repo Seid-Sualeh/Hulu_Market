@@ -28,6 +28,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 
 type OrderTab = "processing" | "success" | "cancelled";
 
@@ -165,7 +166,7 @@ export default function InboxPage() {
     try {
       const formData = new FormData();
       formData.append("file", file, filename || "upload");
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await fetchBackend("upload", { method: "POST", body: formData });
       const data = await res.json();
       return data.success ? data.url : null;
     } catch {

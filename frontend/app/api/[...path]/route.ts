@@ -34,15 +34,22 @@ async function proxyRequest(
   });
 
   try {
-    const body =
-      req.method !== "GET" && req.method !== "HEAD"
-        ? await req.blob()
-        : undefined;
+    let body: BodyInit | undefined = undefined;
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      const contentType = req.headers.get("content-type") || "";
+      if (contentType.includes("multipart/form-data") && req.body) {
+        body = req.body as unknown as BodyInit;
+      } else {
+        body = await req.blob();
+      }
+    }
 
     const response = await fetch(targetUrl, {
       method: req.method,
       headers: forwardHeaders,
       body,
+      // @ts-expect-error duplex is required by Fetch standard when body is a ReadableStream
+      duplex: "half",
       cache: "no-store",
     });
 

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 import {
   AlertCircle,
   ArrowLeft,
@@ -116,7 +117,7 @@ function DepositPageInner() {
   const fetchTransactions = async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/transactions/my?userId=${user.id}`);
+      const res = await fetchBackend(`transactions/my?userId=${user.id}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.transactions)) {
         const deposits = data.transactions
@@ -212,7 +213,7 @@ function DepositPageInner() {
       if (screenshotFile) {
         const formData = new FormData();
         formData.append("file", screenshotFile);
-        const uploadRes = await fetch("/api/upload", {
+        const uploadRes = await fetchBackend("upload", {
           method: "POST",
           body: formData,
         });
@@ -222,7 +223,7 @@ function DepositPageInner() {
         }
       }
 
-      const res = await fetch("/api/transactions/deposit", {
+      const res = await fetchBackend("transactions/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

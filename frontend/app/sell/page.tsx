@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth, isUserSignedIn } from "@/lib/auth";
+import { fetchBackend, resolveImageUrl } from "@/lib/api";
 import {
   AlertCircle,
   ArrowRight,
@@ -109,7 +110,7 @@ function SellPageInner() {
   // Load existing channel if in edit/resubmit mode
   useEffect(() => {
     if (!editChannelId) return;
-    fetch(`/api/channels/${editChannelId}`)
+    fetchBackend(`channels/${editChannelId}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success && data.channel) {
@@ -126,13 +127,7 @@ function SellPageInner() {
           setPhoneNumber(ch.seller_phone || "");
           if (ch.screenshot_url) {
             setExistingScreenshotUrl(ch.screenshot_url);
-            setPreviewImage(
-              ch.screenshot_url.startsWith("http")
-                ? ch.screenshot_url
-                : ch.screenshot_url.startsWith("/")
-                ? ch.screenshot_url
-                : `/${ch.screenshot_url}`
-            );
+            setPreviewImage(resolveImageUrl(ch.screenshot_url));
           }
           if (ch.rejection_reason) {
             setRejectionNotice(ch.rejection_reason);
@@ -335,7 +330,7 @@ function SellPageInner() {
       if (screenshotFile) {
         const formData = new FormData();
         formData.append("file", screenshotFile);
-        const uploadRes = await fetch("/api/upload", {
+        const uploadRes = await fetchBackend("upload", {
           method: "POST",
           body: formData,
         });
@@ -343,7 +338,7 @@ function SellPageInner() {
         if (uploadData.success && uploadData.url) {
           uploadedScreenshotUrl = uploadData.url;
         } else {
-          setSubmitError("Failed to upload dashboard screenshot. Please try again.");
+          setSubmitError(uploadData?.error || "Failed to upload dashboard screenshot. Please try again.");
           setIsSubmitting(false);
           return;
         }
@@ -368,10 +363,10 @@ function SellPageInner() {
         agreed_declaration: true,
       };
 
-      const url = editChannelId ? `/api/channels/${editChannelId}/resubmit` : "/api/channels";
+      const path = editChannelId ? `channels/${editChannelId}/resubmit` : "channels";
       const method = editChannelId ? "PATCH" : "POST";
 
-      const res = await fetch(url, {
+      const res = await fetchBackend(path, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
