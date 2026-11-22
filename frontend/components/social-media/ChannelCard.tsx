@@ -28,41 +28,46 @@ export default function ChannelCard({
 }: ChannelCardProps) {
   const [starred, setStarred] = useState(false);
 
-  // Sync initial starred state from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("hulu_favorites");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.some((item: any) => item.id === channel.id)) {
-          setStarred(true);
-        }
-      }
-    } catch {
-      // ignore JSON error
-    }
+  const rawChannelId = (channel as any).dbId
+    ? Number((channel as any).dbId)
+    : parseInt(String(channel.id).replace(/\D+/g, ""), 10) || channel.id;
 
-    const handleSync = () => {
+  // Sync star status from localStorage
+  useEffect(() => {
+    const checkStarred = () => {
       try {
         const stored = localStorage.getItem("hulu_favorites");
         if (stored) {
           const parsed = JSON.parse(stored);
-          setStarred(Array.isArray(parsed) && parsed.some((item: any) => item.id === channel.id));
+          const isFav =
+            Array.isArray(parsed) &&
+            parsed.some(
+              (item: any) =>
+                String(item.id) === String(channel.id) ||
+                String(item.channel_id) === String(rawChannelId) ||
+                String(item.id) === String(rawChannelId) ||
+                (item.title &&
+                  String(item.title).toLowerCase() ===
+                    String(channel.name).toLowerCase())
+            );
+          setStarred(isFav);
         } else {
           setStarred(false);
         }
       } catch {
-        // ignore
+        // ignore JSON error
       }
     };
 
-    window.addEventListener("hulu_favorites_updated", handleSync);
-    window.addEventListener("storage", handleSync);
+    checkStarred();
+
+    window.addEventListener("hulu_favorites_updated", checkStarred);
+    window.addEventListener("storage", checkStarred);
     return () => {
-      window.removeEventListener("hulu_favorites_updated", handleSync);
-      window.removeEventListener("storage", handleSync);
+      window.removeEventListener("hulu_favorites_updated", checkStarred);
+      window.removeEventListener("storage", checkStarred);
     };
-  }, [channel.id]);
+  }, [channel.id, channel.name, rawChannelId]);
 
   const toggleFavorite = () => {
     try {
@@ -73,24 +78,51 @@ export default function ChannelCard({
       const rawUser = localStorage.getItem("hulu_user");
       const userId = rawUser ? JSON.parse(rawUser)?.id : null;
 
-      const exists = currentList.some((item: any) => item.id === channel.id);
+      const exists = currentList.some(
+        (item: any) =>
+          String(item.id) === String(channel.id) ||
+          String(item.channel_id) === String(rawChannelId) ||
+          String(item.id) === String(rawChannelId) ||
+          (item.title &&
+            String(item.title).toLowerCase() ===
+              String(channel.name).toLowerCase())
+      );
 
       if (exists) {
-        currentList = currentList.filter((item: any) => item.id !== channel.id);
+        currentList = currentList.filter(
+          (item: any) =>
+            String(item.id) !== String(channel.id) &&
+            String(item.channel_id) !== String(rawChannelId) &&
+            String(item.id) !== String(rawChannelId) &&
+            !(
+              item.title &&
+              String(item.title).toLowerCase() ===
+                String(channel.name).toLowerCase()
+            )
+        );
         setStarred(false);
         if (userId) {
-          fetchBackend(`user/favorites/${channel.id}?userId=${userId}`, { method: "DELETE" }).catch(() => {});
+          fetchBackend(`user/favorites/${rawChannelId}?userId=${userId}`, {
+            method: "DELETE",
+          }).catch(() => {});
         }
       } else {
         const newFav = {
           id: channel.id,
+          channel_id: rawChannelId,
+          dbId: rawChannelId,
           title: channel.name,
-          category: "Social Media Channels",
+          name: channel.name,
+          category: channel.category || "Social Media Channels",
           categorySlug: "social-media",
           platform: channel.platform,
-          handle: channel.linkText,
+          handle: channel.linkText || channel.name,
           spec: `${channel.followers} ${channel.followersLabel || "Followers"} • ${channel.secondaryStat || "Active"}`,
+          subscribers: channel.followers,
+          views_or_likes: channel.secondaryStat || "Active",
           price: channel.rawPrice,
+          link_url: channel.linkUrl,
+          screenshot_url: channel.screenshot_url,
           savedDate: "Saved just now",
           verified: true,
         };
@@ -100,7 +132,7 @@ export default function ChannelCard({
           fetchBackend("user/favorites", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, channelId: channel.id }),
+            body: JSON.stringify({ userId, channelId: rawChannelId }),
           }).catch(() => {});
         }
       }

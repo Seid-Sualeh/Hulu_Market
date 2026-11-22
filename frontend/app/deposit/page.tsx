@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  RefreshCw,
   User,
   Wallet,
   X,
@@ -137,13 +138,16 @@ function DepositPageInner() {
             };
           });
 
-        // Auto-detect approval: if any pending deposit just became approved
+        // Auto-detect approval: if a pending deposit became approved
         setDepositHistory((prev) => {
-          const hadPending = prev.some((p) => p.status === "pending");
-          const nowApproved = deposits.find((d: any) => d.status === "approved");
-          if (hadPending && nowApproved && !approvedAlert) {
+          const newlyApproved = deposits.find((d: any) => {
+            const previous = prev.find((p) => p.id === d.id);
+            return previous && previous.status === "pending" && d.status === "approved";
+          });
+
+          if (newlyApproved && !approvedAlert) {
             setApprovedAlert(
-              `🎉 Deposit Approved! Your balance has been credited with ${nowApproved.amount}. Redirecting back to complete your purchase...`
+              `🎉 Deposit Approved! Your balance has been credited with ${newlyApproved.amount}. Redirecting back to complete your purchase...`
             );
             refreshUser?.();
             setTimeout(() => {
@@ -239,11 +243,17 @@ function DepositPageInner() {
       const data = await res.json();
       if (data.success) {
         setSubmittedSuccess(true);
+        // Reset form inputs for a fresh state
+        setAmount("");
+        setDepositorName("");
+        setPreviewScreenshot(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+
         // Store redirect URL for after admin approval
         if (redirectUrl) {
           try { localStorage.setItem("hulu_deposit_redirect", redirectUrl); } catch {}
         }
-        fetchTransactions();
+        await fetchTransactions();
         refreshUser?.();
       } else {
         setSubmitError(data.error || "Failed to submit deposit.");
@@ -607,7 +617,21 @@ function DepositPageInner() {
 
         {/* Right Column: History Section (matching deposit-page.png) */}
         <div className="space-y-4 lg:col-span-4">
-          <h2 className="text-sm font-bold text-white">History</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-white">History</h2>
+            <button
+              type="button"
+              onClick={() => {
+                fetchTransactions();
+                refreshUser?.();
+              }}
+              className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1.5 transition font-semibold"
+              title="Refresh deposit status"
+            >
+              <RefreshCw size={12} className={isSubmitting ? "animate-spin" : ""} />
+              <span>Refresh</span>
+            </button>
+          </div>
 
           <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-5 sm:p-6 shadow-md min-h-[18rem]">
             {depositHistory.length > 0 ? (
@@ -630,10 +654,22 @@ function DepositPageInner() {
                           {h.method} Deposit
                         </span>
                       </div>
-                      <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[9px] font-bold text-amber-400 flex items-center gap-1">
-                        <Clock size={10} />
-                        PENDING
-                      </span>
+                      {h.status === "approved" ? (
+                        <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 size={10} />
+                          APPROVED
+                        </span>
+                      ) : h.status === "rejected" ? (
+                        <span className="rounded-full bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 text-[9px] font-bold text-rose-400 flex items-center gap-1">
+                          <X size={10} />
+                          REJECTED
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[9px] font-bold text-amber-400 flex items-center gap-1">
+                          <Clock size={10} />
+                          PENDING
+                        </span>
+                      )}
                     </div>
 
                     <p className="font-mono text-base font-bold text-amber-300">

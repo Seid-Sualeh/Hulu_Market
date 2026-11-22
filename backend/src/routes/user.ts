@@ -245,7 +245,8 @@ userRouter.post("/favorites", async (req: Request, res: Response): Promise<void>
   try {
     const { userId, channelId } = req.body;
     const targetUserId = userId ? parseInt(String(userId), 10) : null;
-    const targetChannelId = channelId ? parseInt(String(channelId), 10) : null;
+    const cleanChan = String(channelId || "").replace(/^db-/, "").trim();
+    const targetChannelId = cleanChan ? parseInt(cleanChan, 10) : null;
 
     if (!targetUserId || !targetChannelId) {
       res.status(400).json({ success: false, error: "userId and channelId are required" });
@@ -269,7 +270,8 @@ userRouter.post("/favorites", async (req: Request, res: Response): Promise<void>
  */
 userRouter.delete("/favorites/:channelId", async (req: Request, res: Response): Promise<void> => {
   try {
-    const channelId = parseInt(req.params.channelId as string, 10);
+    const cleanChan = String(req.params.channelId || "").replace(/^db-/, "").trim();
+    const channelId = cleanChan ? parseInt(cleanChan, 10) : null;
     const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
 
     if (!userId || !channelId) {

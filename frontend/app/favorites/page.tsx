@@ -40,52 +40,80 @@ export default function FavoritesPage() {
   const loadFavorites = async () => {
     setLoading(true);
     try {
+      let dbFavorites: FavoriteItem[] = [];
       if (user?.id) {
-        const res = await fetchBackend(`user/favorites?userId=${user.id}`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.favorites)) {
-          const mapped: FavoriteItem[] = data.favorites.map((f: any) => ({
-            id: f.id,
-            channel_id: f.id,
-            title: f.name,
-            category: f.category || "Social Media Channels",
-            platform: f.platform,
-            subscribers: f.subscribers,
-            views_or_likes: f.views_or_likes,
-            spec: `${f.subscribers || "0"} followers • ${f.views_or_likes || "Active"}`,
-            price: f.price,
-            link_url: f.link_url,
-            created_at: f.favorited_at || f.created_at,
-          }));
-          setFavorites(mapped);
-          localStorage.setItem("hulu_favorites", JSON.stringify(mapped));
-          return;
+        try {
+          const res = await fetchBackend(`user/favorites?userId=${user.id}`);
+          const data = await res.json();
+          if (data.success && Array.isArray(data.favorites)) {
+            dbFavorites = data.favorites.map((f: any) => ({
+              id: f.id,
+              channel_id: f.id,
+              title: f.name,
+              category: f.category || "Social Media Channels",
+              platform: f.platform,
+              subscribers: f.subscribers,
+              views_or_likes: f.views_or_likes,
+              spec: `${f.subscribers || "0"} followers • ${f.views_or_likes || "Active"}`,
+              price: f.price,
+              link_url: f.link_url,
+              created_at: f.favorited_at || f.created_at,
+            }));
+          }
+        } catch (dbErr) {
+          console.warn("[Favorites DB Fetch Warning]:", dbErr);
         }
       }
 
-      // Fallback to local storage (user added before sign in, NO DEMO DATA)
+      // Read local favorites
+      let localFavorites: FavoriteItem[] = [];
       const stored = localStorage.getItem("hulu_favorites");
       if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          // Filter out legacy demo items if any existed
-          const realItems = parsed.filter((item: any) => 
-            !String(item.id).startsWith("fav-house") && 
-            !String(item.id).startsWith("fav-veh") &&
-            item.title !== "Siifan" &&
-            item.title !== "USTAZ KHALID (Official)"
-          );
-          setFavorites(realItems);
-          localStorage.setItem("hulu_favorites", JSON.stringify(realItems));
-        } else {
-          setFavorites([]);
-        }
-      } else {
-        setFavorites([]);
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            localFavorites = parsed.filter(
+              (item: any) =>
+                !String(item.id).startsWith("fav-house") &&
+                !String(item.id).startsWith("fav-veh") &&
+                item.title !== "Siifan" &&
+                item.title !== "USTAZ KHALID (Official)"
+            );
+          }
+        } catch {}
       }
+
+      // Merge DB favorites and local favorites (avoiding duplicates)
+      const mergedMap = new Map<string, FavoriteItem>();
+
+      // Put db favorites first
+      for (const item of dbFavorites) {
+        const key = String(item.channel_id || item.id).replace(/^db-/, "");
+        mergedMap.set(key, item);
+      }
+
+      // Merge local favorites and auto-sync any unsynced items to MySQL
+      for (const item of localFavorites) {
+        const rawId = String(item.channel_id || item.id).replace(/^db-/, "");
+        if (!mergedMap.has(rawId)) {
+          mergedMap.set(rawId, item);
+
+          // If logged in and this item wasn't in DB, sync it to MySQL
+          if (user?.id && !isNaN(parseInt(rawId, 10))) {
+            fetchBackend("user/favorites", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: user.id, channelId: parseInt(rawId, 10) }),
+            }).catch(() => {});
+          }
+        }
+      }
+
+      const mergedList = Array.from(mergedMap.values());
+      setFavorites(mergedList);
+      localStorage.setItem("hulu_favorites", JSON.stringify(mergedList));
     } catch (err) {
       console.error("[Favorites Load Error]:", err);
-      setFavorites([]);
     } finally {
       setLoading(false);
     }
@@ -107,16 +135,23 @@ export default function FavoritesPage() {
   }, [user?.id]);
 
   const removeFavorite = async (id: string | number) => {
+    const cleanId = String(id).replace(/^db-/, "").trim();
     // Optimistic UI update
-    const updated = favorites.filter((item) => item.id !== id && item.channel_id !== id);
+    const updated = favorites.filter(
+      (item) =>
+        String(item.id) !== String(id) &&
+        String(item.channel_id) !== String(id) &&
+        String(item.id).replace(/^db-/, "") !== cleanId &&
+        String(item.channel_id).replace(/^db-/, "") !== cleanId
+    );
     setFavorites(updated);
     localStorage.setItem("hulu_favorites", JSON.stringify(updated));
     window.dispatchEvent(new Event("hulu_favorites_updated"));
 
     // Sync deletion with MySQL if logged in
-    if (user?.id) {
+    if (user?.id && cleanId && !isNaN(parseInt(cleanId, 10))) {
       try {
-        await fetchBackend(`user/favorites/${id}?userId=${user.id}`, {
+        await fetchBackend(`user/favorites/${cleanId}?userId=${user.id}`, {
           method: "DELETE",
         });
       } catch (err) {
