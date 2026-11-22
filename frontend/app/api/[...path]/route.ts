@@ -12,10 +12,11 @@ const BACKEND_URL = rawBackendUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
 
 async function proxyRequest(
   req: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
+  context: { params: Promise<{ path: string[] }> | { path: string[] } }
 ) {
-  const { path } = await context.params;
-  const pathString = path.join("/");
+  const resolvedParams = await Promise.resolve(context?.params);
+  const path = resolvedParams?.path || [];
+  const pathString = Array.isArray(path) ? path.join("/") : "";
   const search = req.nextUrl.search || "";
   const targetUrl = `${BACKEND_URL}/api/${pathString}${search}`;
 
@@ -44,14 +45,19 @@ async function proxyRequest(
       }
     }
 
-    const response = await fetch(targetUrl, {
+    const fetchOptions: RequestInit = {
       method: req.method,
       headers: forwardHeaders,
-      body,
-      // @ts-expect-error duplex is required by Fetch standard when body is a ReadableStream
-      duplex: "half",
       cache: "no-store",
-    });
+    };
+
+    if (body) {
+      fetchOptions.body = body;
+      // @ts-expect-error duplex is required by Fetch standard when body is a ReadableStream
+      fetchOptions.duplex = "half";
+    }
+
+    const response = await fetch(targetUrl, fetchOptions);
 
     const data = await response.blob();
     const responseHeaders = new Headers();

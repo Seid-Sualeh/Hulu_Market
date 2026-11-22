@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 import {
   AlertCircle,
   ArrowDownLeft,
@@ -127,7 +128,7 @@ export default function WithdrawPage() {
   const fetchWithdrawals = async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/transactions/my?userId=${user.id}`);
+      const res = await fetchBackend(`transactions/my?userId=${user.id}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.transactions)) {
         const records: WithdrawalRecord[] = data.transactions
@@ -196,7 +197,7 @@ export default function WithdrawPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/transactions/withdraw", {
+      const res = await fetchBackend("transactions/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

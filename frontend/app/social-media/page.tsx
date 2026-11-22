@@ -8,6 +8,7 @@ import ChannelCard from "@/components/social-media/ChannelCard";
 import ChannelDetailPage from "@/components/social-media/ChannelDetailPage";
 import { ChannelItem, PlatformType } from "@/components/social-media/types";
 import { isUserSignedIn, useAuth } from "@/lib/auth";
+import { fetchBackend, resolveImageUrl } from "@/lib/api";
 
 type SortOption = "default" | "price_asc" | "price_desc" | "followers_desc" | "followers_asc";
 
@@ -53,7 +54,7 @@ export default function SocialMediaPage() {
   const loadChannels = async () => {
     setLoadingChannels(true);
     try {
-      const res = await fetch("/api/channels");
+      const res = await fetchBackend("channels");
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
         const text = await res.text();
@@ -80,7 +81,7 @@ export default function SocialMediaPage() {
           linkText: c.name,
           linkUrl: c.link_url || "#",
           description: c.description || "",
-          screenshot_url: c.screenshot_url || null,
+          screenshot_url: resolveImageUrl(c.screenshot_url),
           isNew: true,
           badgeTag: "Very Good Price",
           status: "ACTIVE",
@@ -206,7 +207,7 @@ export default function SocialMediaPage() {
     setPurchaseError(null);
 
     try {
-      const res = await fetch("/api/escrow/order", {
+      const res = await fetchBackend("escrow/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

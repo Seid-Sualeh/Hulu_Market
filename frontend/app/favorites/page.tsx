@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend, resolveImageUrl } from "@/lib/api";
 import {
   ExternalLink,
   Eye,
@@ -40,7 +41,7 @@ export default function FavoritesPage() {
     setLoading(true);
     try {
       if (user?.id) {
-        const res = await fetch(`/api/user/favorites?userId=${user.id}`);
+        const res = await fetchBackend(`user/favorites?userId=${user.id}`);
         const data = await res.json();
         if (data.success && Array.isArray(data.favorites)) {
           const mapped: FavoriteItem[] = data.favorites.map((f: any) => ({
@@ -115,7 +116,7 @@ export default function FavoritesPage() {
     // Sync deletion with MySQL if logged in
     if (user?.id) {
       try {
-        await fetch(`/api/user/favorites/${id}?userId=${user.id}`, {
+        await fetchBackend(`user/favorites/${id}?userId=${user.id}`, {
           method: "DELETE",
         });
       } catch (err) {
@@ -133,7 +134,7 @@ export default function FavoritesPage() {
     if (user?.id) {
       for (const fav of favorites) {
         try {
-          await fetch(`/api/user/favorites/${fav.id}?userId=${user.id}`, {
+          await fetchBackend(`user/favorites/${fav.id}?userId=${user.id}`, {
             method: "DELETE",
           });
         } catch {}

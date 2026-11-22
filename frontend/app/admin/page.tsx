@@ -36,12 +36,10 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuth, signInUser } from "@/lib/auth";
-import { fetchBackend } from "@/lib/api";
+import { fetchBackend, resolveImageUrl } from "@/lib/api";
 
 function formatUploadUrl(url?: string | null): string {
-  if (!url) return "";
-  if (url.startsWith("http")) return url;
-  return url.startsWith("/") ? url : `/${url}`;
+  return resolveImageUrl(url);
 }
 
 type AdminTab = "overview" | "approvals" | "inbox" | "users" | "channels" | "transactions";

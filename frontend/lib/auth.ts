@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchBackend } from "@/lib/api";
 
 export interface AuthUser {
   id?: number | string;
@@ -83,7 +84,7 @@ export async function refreshUser(): Promise<AuthUser | null> {
   const current = getAuthUser();
   if (!current || !current.id) return current;
   try {
-    const res = await fetch(`/api/user/profile?userId=${current.id}`);
+    const res = await fetchBackend(`user/profile?userId=${current.id}`);
     const data = await res.json();
     if (data.success && data.user) {
       const updated: AuthUser = {

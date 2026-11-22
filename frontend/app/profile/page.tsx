@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth, signInUser, signOutUser } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 import {
   ArrowDownCircle,
   ArrowLeftRight,
@@ -67,7 +68,7 @@ export default function ProfilePage() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/user/profile?userId=${user.id}`);
+      const res = await fetchBackend(`user/profile?userId=${user.id}`);
       const data = await res.json();
       if (data.success && data.user) {
         setProfileData(data.user);
@@ -94,7 +95,7 @@ export default function ProfilePage() {
     setFeedback(null);
 
     try {
-      const res = await fetch("/api/user/profile", {
+      const res = await fetchBackend("user/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

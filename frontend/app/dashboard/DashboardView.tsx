@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 import {
   Activity,
   ArrowDownLeft,
@@ -107,7 +108,7 @@ export default function DashboardView() {
     setLoading(true);
     try {
       await refreshUser?.();
-      const res = await fetch(`/api/user/stats?userId=${user.id}`);
+      const res = await fetchBackend(`user/stats?userId=${user.id}`);
       const data = await res.json();
       if (data.success) {
         if (data.stats) {

@@ -11,6 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import { ChannelItem } from "./types";
+import { fetchBackend } from "@/lib/api";
 
 interface ChannelCardProps {
   channel: ChannelItem;
@@ -78,7 +79,7 @@ export default function ChannelCard({
         currentList = currentList.filter((item: any) => item.id !== channel.id);
         setStarred(false);
         if (userId) {
-          fetch(`/api/user/favorites/${channel.id}?userId=${userId}`, { method: "DELETE" }).catch(() => {});
+          fetchBackend(`user/favorites/${channel.id}?userId=${userId}`, { method: "DELETE" }).catch(() => {});
         }
       } else {
         const newFav = {
@@ -96,7 +97,7 @@ export default function ChannelCard({
         currentList = [newFav, ...currentList];
         setStarred(true);
         if (userId) {
-          fetch("/api/user/favorites", {
+          fetchBackend("user/favorites", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ userId, channelId: channel.id }),

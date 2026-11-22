@@ -65,12 +65,13 @@ export function resolveImageUrl(path?: string | null): string {
  * Automatically injects auth headers (x-user-role, x-user-id, Authorization) from localStorage.
  */
 export async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
-  const baseUrl = getApiBaseUrl();
-  const cleanPath = path.startsWith("/") ? path.slice(1) : path;
+  const baseUrl = getApiBaseUrl().replace(/\/+$/, "");
+  let cleanPath = path.startsWith("/") ? path.slice(1) : path;
+  if (cleanPath.startsWith("api/")) {
+    cleanPath = cleanPath.slice(4);
+  }
   
-  // If baseUrl already ends with /api or similar, handle smoothly
-  const separator = baseUrl.endsWith("/") ? "" : "/";
-  const url = `${baseUrl}${separator}${cleanPath}`;
+  const url = `${baseUrl}/${cleanPath}`;
   
   const headers = new Headers(init?.headers);
   if (typeof window !== "undefined") {

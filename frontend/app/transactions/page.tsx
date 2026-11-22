@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
@@ -57,7 +58,7 @@ export default function TransactionsPage() {
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/transactions/my?userId=${user.id}`);
+      const res = await fetchBackend(`transactions/my?userId=${user.id}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.transactions)) {
         setTransactions(data.transactions);

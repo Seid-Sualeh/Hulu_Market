@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend, resolveImageUrl } from "@/lib/api";
 import {
   AlertCircle,
   Archive,
@@ -60,7 +61,7 @@ export default function MyMarketPlacePage() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/channels/my?sellerId=${user.id}`);
+      const res = await fetchBackend(`channels/my?sellerId=${user.id}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.channels)) {
         setChannels(data.channels);

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 import {
   ArrowDownLeft,
   ArrowRight,
@@ -42,7 +43,7 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     if (!user?.id) return;
-    fetch(`/api/user/notifications?userId=${user.id}`)
+    fetchBackend(`user/notifications?userId=${user.id}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success && Array.isArray(data.notifications) && data.notifications.length > 0) {

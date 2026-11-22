@@ -108,7 +108,7 @@ export default function InboxPage() {
   const loadOrders = async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/escrow/orders?userId=${user.id}`);
+      const res = await fetchBackend(`escrow/orders?userId=${user.id}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.orders)) {
         const mapped: P2POrder[] = data.orders.map((o: any) => ({
@@ -151,7 +151,7 @@ export default function InboxPage() {
     setLoadingMessages(true);
     setOrderChatInput("");
     try {
-      const res = await fetch(`/api/escrow/orders/${order.id}/messages`);
+      const res = await fetchBackend(`escrow/orders/${order.id}/messages`);
       const data = await res.json();
       if (data.success && Array.isArray(data.messages)) {
         setOrderMessages(data.messages);
@@ -185,7 +185,7 @@ export default function InboxPage() {
     setSendingMessage(true);
     const role = isBuyer(selectedOrder) ? "buyer" : isSeller(selectedOrder) ? "seller" : "buyer";
     try {
-      const res = await fetch(`/api/escrow/orders/${selectedOrder.id}/messages`, {
+      const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -266,7 +266,7 @@ export default function InboxPage() {
     if (!confirm("Are you sure you have successfully received the channel ownership and want to confirm completion?")) return;
     setConfirmingCompletion(true);
     try {
-      const res = await fetch(`/api/escrow/orders/${selectedOrder.id}/confirm`, {
+      const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/confirm`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: "buyer", userId: user.id }),
@@ -292,7 +292,7 @@ export default function InboxPage() {
     if (!confirm("Are you sure you have successfully completed the transfer of channel ownership to the buyer and want to confirm completion?")) return;
     setConfirmingCompletion(true);
     try {
-      const res = await fetch(`/api/escrow/orders/${selectedOrder.id}/confirm`, {
+      const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/confirm`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: "seller", userId: user.id }),
@@ -357,13 +357,13 @@ export default function InboxPage() {
     if (!selectedOrder) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/escrow/orders/${selectedOrder.id}/messages`);
+        const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/messages`);
         const data = await res.json();
         if (data.success && Array.isArray(data.messages)) {
           setOrderMessages(data.messages);
         }
         // Also refresh order state
-        const orderRes = await fetch(`/api/escrow/orders?userId=${user?.id}`);
+        const orderRes = await fetchBackend(`escrow/orders?userId=${user?.id}`);
         const orderData = await orderRes.json();
         if (orderData.success && Array.isArray(orderData.orders)) {
           const updated = orderData.orders.find((o: any) => o.id === selectedOrder.id);
