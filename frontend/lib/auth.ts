@@ -76,6 +76,7 @@ export function signInUser(
 export function signOutUser(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(AUTH_STORAGE_KEY);
+  localStorage.removeItem("hulu_token");
   window.dispatchEvent(new Event("hulu_auth_state_changed"));
 }
 

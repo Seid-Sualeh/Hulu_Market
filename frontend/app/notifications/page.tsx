@@ -38,7 +38,6 @@ interface NotificationItem {
 export default function NotificationsPage() {
   const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "escrow" | "wallet">("all");
-  const [showDemoNotifications, setShowDemoNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   useEffect(() => {
@@ -46,9 +45,10 @@ export default function NotificationsPage() {
     fetchBackend(`user/notifications?userId=${user.id}`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.success && Array.isArray(data.notifications) && data.notifications.length > 0) {
+        if (data.success && Array.isArray(data.notifications)) {
           const mapped: NotificationItem[] = data.notifications.map((n: any) => ({
             id: `notif-${n.id}`,
+            dbId: n.id,
             type: n.type || "system",
             title: n.title,
             message: n.message,
@@ -74,14 +74,22 @@ export default function NotificationsPage() {
     return true;
   });
 
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
     setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+    for (const item of notifications) {
+      if (!item.read) {
+        const rawId = (item as any).dbId || item.id.replace(/^notif-/, "");
+        fetchBackend(`user/notifications/${rawId}/read`, { method: "PATCH" }).catch(() => {});
+      }
+    }
   };
 
   const markAsRead = (id: string) => {
     setNotifications((prev) =>
       prev.map((item) => (item.id === id ? { ...item, read: true } : item))
     );
+    const rawId = id.replace(/^notif-/, "");
+    fetchBackend(`user/notifications/${rawId}/read`, { method: "PATCH" }).catch(() => {});
   };
 
   const deleteNotification = (id: string) => {
@@ -124,15 +132,6 @@ export default function NotificationsPage() {
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => setShowDemoNotifications(!showDemoNotifications)}
-              className="px-3 py-1.5 rounded-lg border border-slate-700/80 bg-[#161d2b]/70 hover:bg-[#1a2333] text-xs font-medium text-slate-300 transition-colors flex items-center gap-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{showDemoNotifications ? "Show Empty State" : "Restore Notifications"}</span>
-            </button>
-
             {displayedList.length > 0 && (
               <>
                 <button

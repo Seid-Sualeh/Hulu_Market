@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
+import { authenticateToken, optionalAuth } from "../middleware/auth.js";
 
 export const transactionsRouter = Router();
 
@@ -8,7 +9,7 @@ export const transactionsRouter = Router();
  * POST /api/transactions/deposit
  * Submits a new deposit receipt from the user.
  */
-transactionsRouter.post("/deposit", async (req: Request, res: Response): Promise<void> => {
+transactionsRouter.post("/deposit", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, amount, paymentMethod, accountNumber, accountName, referenceCode, screenshotUrl } = req.body;
 
@@ -23,8 +24,13 @@ transactionsRouter.post("/deposit", async (req: Request, res: Response): Promise
       return;
     }
 
-    // Default to user id 1 if not provided or anonymous guest
-    const targetUserId = userId ? parseInt(String(userId), 10) : 1;
+    // Determine target user id: from authenticated token, or verified fallback
+    const targetUserId = req.user?.id || (userId ? parseInt(String(userId), 10) : null);
+    if (!targetUserId) {
+      res.status(401).json({ success: false, error: "Please sign in before submitting a deposit." });
+      return;
+    }
+
     const refCode = referenceCode || `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const [result] = await pool.query<ResultSetHeader>(
@@ -56,11 +62,12 @@ transactionsRouter.post("/deposit", async (req: Request, res: Response): Promise
 
 /**
  * POST /api/transactions/withdraw
- * Submits a withdrawal request from the user.
+ * Submits a withdrawal request from the user. Atomic balance lock protects against double-spend.
  */
-transactionsRouter.post("/withdraw", async (req: Request, res: Response): Promise<void> => {
+transactionsRouter.post("/withdraw", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
   try {
-    const { userId, amount, paymentMethod, accountNumber, accountName } = req.body;
+    const { amount, paymentMethod, accountNumber, accountName } = req.body;
 
     const numAmount = Number(amount);
     if (!numAmount || isNaN(numAmount) || numAmount <= 0) {
@@ -73,34 +80,28 @@ transactionsRouter.post("/withdraw", async (req: Request, res: Response): Promis
       return;
     }
 
-    const targetUserId = userId ? parseInt(String(userId), 10) : 1;
+    const targetUserId = req.user!.id;
 
-    // Verify user balance
-    const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT balance FROM users WHERE id = ? LIMIT 1",
-      [targetUserId]
+    await conn.beginTransaction();
+
+    // Atomic balance lock
+    const [updateResult] = await conn.query<ResultSetHeader>(
+      "UPDATE users SET balance = balance - ?, locked_balance = locked_balance + ? WHERE id = ? AND balance >= ?",
+      [numAmount, numAmount, targetUserId, numAmount]
     );
 
-    if (userRows.length > 0) {
-      const currentBalance = Number(userRows[0].balance) || 0;
-      if (currentBalance < numAmount) {
-        res.status(400).json({
-          success: false,
-          error: `Insufficient balance. Available: ${currentBalance} ETB, Requested: ${numAmount} ETB`,
-        });
-        return;
-      }
-
-      // Lock the balance pending admin approval
-      await pool.query(
-        "UPDATE users SET balance = balance - ?, locked_balance = locked_balance + ? WHERE id = ?",
-        [numAmount, numAmount, targetUserId]
-      );
+    if (updateResult.affectedRows === 0) {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: "Insufficient balance for this withdrawal request.",
+      });
+      return;
     }
 
     const refCode = `WTH-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    const [result] = await pool.query<ResultSetHeader>(
+    const [result] = await conn.query<ResultSetHeader>(
       `INSERT INTO transactions (user_id, type, amount, payment_method, account_number, account_name, reference_code, status)
        VALUES (?, 'withdrawal', ?, ?, ?, ?, ?, 'pending')`,
       [
@@ -113,6 +114,8 @@ transactionsRouter.post("/withdraw", async (req: Request, res: Response): Promis
       ]
     );
 
+    await conn.commit();
+
     res.status(201).json({
       success: true,
       message: "Withdrawal request submitted successfully and is queued for processing.",
@@ -120,28 +123,38 @@ transactionsRouter.post("/withdraw", async (req: Request, res: Response): Promis
       referenceCode: refCode,
     });
   } catch (error: unknown) {
+    await conn.rollback();
     const err = error as Error;
     console.error("[Withdrawal Error]:", err);
     res.status(500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
   }
 });
 
 /**
  * GET /api/transactions/my
- * Retrieves transaction history for the user.
+ * Retrieves transaction history for the authenticated user.
  */
-transactionsRouter.get("/my", async (req: Request, res: Response): Promise<void> => {
+transactionsRouter.get("/my", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const targetUserId = req.user?.id || requestedUserId;
 
-    if (!userId) {
+    if (!targetUserId) {
       res.json({ success: true, transactions: [] });
+      return;
+    }
+
+    // Non-admin can only see their own transactions
+    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
+      res.status(403).json({ success: false, error: "Access denied." });
       return;
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
-      [userId]
+      [targetUserId]
     );
 
     res.json({ success: true, transactions: rows });

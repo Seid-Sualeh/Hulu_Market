@@ -4,10 +4,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
+import { getJwtSecret } from "../middleware/auth.js";
 
 export const authRouter = Router();
-
-const JWT_SECRET = process.env.JWT_SECRET || "hulu_market_jwt_secret_dev_key_change_in_production";
 
 const signupSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required"),
@@ -86,7 +85,7 @@ authRouter.post("/signup", async (req: Request, res: Response): Promise<void> =>
         email: email.toLowerCase(),
         role: "user",
       },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "30d" }
     );
 
@@ -160,7 +159,7 @@ authRouter.post("/signin", async (req: Request, res: Response): Promise<void> =>
         email: user.email,
         role: user.role,
       },
-      JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: "30d" }
     );
 

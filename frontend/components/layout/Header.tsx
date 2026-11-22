@@ -20,8 +20,11 @@ export default function Header() {
         <PwaInstallButton variant="header" />
 
         {/* Telegram quick action - always visible */}
+        <p className="hidden text-sm font-medium text-slate-300 sm:inline">
+          Contact Us
+        </p>
         <a
-          href="https://t.me"
+          href="https://t.me/seid6363"
           target="_blank"
           rel="noopener noreferrer"
           title="Join Telegram Channel"
@@ -63,7 +66,11 @@ export default function Header() {
               title="View Profile"
               className="grid size-9 place-items-center rounded-full overflow-hidden border border-amber-400/60 p-0.5 hover:ring-2 hover:ring-amber-400/50 transition"
             >
-              <img src="/logo.png" alt="Profile" className="w-full h-full object-cover rounded-full" />
+              <img
+                src="/logo.png"
+                alt="Profile"
+                className="w-full h-full object-cover rounded-full"
+              />
             </Link>
           </>
         )}

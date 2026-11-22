@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import SocialMediaMarketplace from "../../../components/marketplace/SocialMediaMarketplace";
+import { notFound, redirect } from "next/navigation";
 
 type Platform = "telegram" | "youtube" | "facebook" | "instagram" | "tiktok";
 
@@ -14,7 +13,7 @@ const platforms: Platform[] = [
 
 export const metadata: Metadata = {
   title: "Social Media Channels | Hulu Market",
-  description: "Explore social media channel listings on Hulu Market.",
+  description: "Explore real verified social media channel listings on Hulu Market.",
 };
 
 export default async function SocialMediaPlatformPage({
@@ -28,9 +27,5 @@ export default async function SocialMediaPlatformPage({
     notFound();
   }
 
-  return (
-    <SocialMediaMarketplace
-      initialPlatform={platform as Exclude<Platform, "all">}
-    />
-  );
+  redirect(`/social-media?platform=${platform}`);
 }

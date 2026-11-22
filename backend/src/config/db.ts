@@ -270,16 +270,17 @@ export async function initDatabase(): Promise<boolean> {
     );
 
     if (existingAdmins.length === 0) {
-      const adminPass = await bcrypt.hash("admin123", 10);
+      const initialAdminPassword = process.env.ADMIN_INITIAL_PASSWORD || "Admin@Hulu2026!";
+      const adminPass = await bcrypt.hash(initialAdminPassword, 10);
       await conn.query(
         `
         INSERT INTO users (first_name, last_name, email, phone, password_hash, balance, role)
-        VALUES ('System', 'Admin', 'admin@hulumarket.com', '+251900000000', ?, 10000.00, 'admin')
+        VALUES ('System', 'Admin', 'admin@hulumarket.com', '+251900000000', ?, 0.00, 'admin')
         ON DUPLICATE KEY UPDATE role = 'admin'
       `,
         [adminPass]
       );
-      console.log("[Database] Initial admin user initialized: admin@hulumarket.com / admin123");
+      console.log(`[Database] Initial admin user initialized: admin@hulumarket.com`);
     }
 
     conn.release();

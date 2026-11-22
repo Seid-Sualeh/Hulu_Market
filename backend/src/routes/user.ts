@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket } from "mysql2/promise";
 import { pool } from "../config/db.js";
+import { authenticateToken, optionalAuth } from "../middleware/auth.js";
 
 export const userRouter = Router();
 
@@ -8,11 +9,12 @@ export const userRouter = Router();
  * GET /api/user/stats
  * Returns live financial and listing statistics for the user dashboard.
  */
-userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/stats", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const targetUserId = req.user?.id || requestedUserId;
 
-    if (!userId) {
+    if (!targetUserId) {
       res.json({
         success: true,
         stats: {
@@ -33,10 +35,16 @@ userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
+    // Only allow querying own stats unless admin
+    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
+      res.status(403).json({ success: false, error: "Access denied." });
+      return;
+    }
+
     // 1. Fetch user record
     const [userRows] = await pool.query<RowDataPacket[]>(
       "SELECT id, balance, locked_balance FROM users WHERE id = ? LIMIT 1",
-      [userId]
+      [targetUserId]
     );
 
     const balance = userRows.length > 0 ? Number(userRows[0].balance) : 0;
@@ -50,7 +58,7 @@ userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingChannels,
         COALESCE(SUM(CASE WHEN status = 'sold' THEN price ELSE 0 END), 0) AS totalIncome
        FROM channels WHERE seller_id = ?`,
-      [userId]
+      [targetUserId]
     );
 
     const totalChannels = Number(channelRows[0]?.totalChannels || 0);
@@ -68,21 +76,21 @@ userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
         COALESCE(SUM(CASE WHEN type = 'withdrawal' AND status = 'pending' THEN amount ELSE 0 END), 0) AS pendingWithdrawals,
         SUM(CASE WHEN type = 'withdrawal' AND status = 'rejected' THEN 1 ELSE 0 END) AS rejectedWithdrawals
        FROM transactions WHERE user_id = ?`,
-      [userId]
+      [targetUserId]
     );
 
     // 4. Fetch recent transactions
     const [recentTxRows] = await pool.query<RowDataPacket[]>(
       `SELECT id, type, amount, payment_method, reference_code, status, created_at 
        FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 5`,
-      [userId]
+      [targetUserId]
     );
 
     // 5. Fetch recent channel listings
     const [recentChannelRows] = await pool.query<RowDataPacket[]>(
       `SELECT id, name, platform, category, subscribers, price, status, created_at 
        FROM channels WHERE seller_id = ? ORDER BY id DESC LIMIT 5`,
-      [userId]
+      [targetUserId]
     );
 
     // 6. Fetch active escrow orders
@@ -91,7 +99,7 @@ userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
        FROM escrow_orders 
        WHERE (buyer_id = ? OR seller_id = ?) 
        ORDER BY id DESC LIMIT 5`,
-      [userId, userId]
+      [targetUserId, targetUserId]
     );
 
     res.json({
@@ -124,17 +132,24 @@ userRouter.get("/stats", async (req: Request, res: Response): Promise<void> => {
 /**
  * GET /api/user/profile
  */
-userRouter.get("/profile", async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/profile", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    if (!userId) {
+    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const targetUserId = req.user?.id || requestedUserId;
+
+    if (!targetUserId) {
       res.status(400).json({ success: false, error: "userId required" });
+      return;
+    }
+
+    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
+      res.status(403).json({ success: false, error: "Access denied." });
       return;
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
       "SELECT id, first_name, last_name, email, phone, balance, locked_balance, role, created_at FROM users WHERE id = ? LIMIT 1",
-      [userId]
+      [targetUserId]
     );
 
     if (rows.length === 0) {
@@ -150,14 +165,20 @@ userRouter.get("/profile", async (req: Request, res: Response): Promise<void> =>
 
 /**
  * PATCH /api/user/profile
- * Updates user profile details (first_name, last_name, phone, email) in MySQL.
+ * Updates user profile details in MySQL.
  */
-userRouter.patch("/profile", async (req: Request, res: Response): Promise<void> => {
+userRouter.patch("/profile", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, firstName, lastName, phone, email } = req.body;
-    const targetUserId = userId ? parseInt(String(userId), 10) : null;
+    const targetUserId = req.user?.id || (userId ? parseInt(String(userId), 10) : null);
+
     if (!targetUserId) {
-      res.status(400).json({ success: false, error: "userId is required" });
+      res.status(401).json({ success: false, error: "Authentication required to update profile." });
+      return;
+    }
+
+    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
+      res.status(403).json({ success: false, error: "You can only update your own profile." });
       return;
     }
 
@@ -198,26 +219,15 @@ userRouter.patch("/profile", async (req: Request, res: Response): Promise<void> 
  * GET /api/user/favorites
  * Returns channels favorited by the user from MySQL database.
  */
-userRouter.get("/favorites", async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/favorites", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    if (!userId) {
+    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const targetUserId = req.user?.id || requestedUserId;
+
+    if (!targetUserId) {
       res.json({ success: true, favorites: [] });
       return;
     }
-
-    // Ensure table exists
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS user_favorites (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        channel_id INT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_user_fav (user_id, channel_id),
-        INDEX idx_fav_user (user_id),
-        INDEX idx_fav_channel (channel_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT 
@@ -228,7 +238,7 @@ userRouter.get("/favorites", async (req: Request, res: Response): Promise<void> 
        JOIN channels c ON f.channel_id = c.id
        WHERE f.user_id = ?
        ORDER BY f.id DESC`,
-      [userId]
+      [targetUserId]
     );
 
     res.json({ success: true, favorites: rows });
@@ -241,10 +251,10 @@ userRouter.get("/favorites", async (req: Request, res: Response): Promise<void> 
  * POST /api/user/favorites
  * Adds a channel to user's favorites in MySQL.
  */
-userRouter.post("/favorites", async (req: Request, res: Response): Promise<void> => {
+userRouter.post("/favorites", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId, channelId } = req.body;
-    const targetUserId = userId ? parseInt(String(userId), 10) : null;
+    const targetUserId = req.user?.id || (userId ? parseInt(String(userId), 10) : null);
     const cleanChan = String(channelId || "").replace(/^db-/, "").trim();
     const targetChannelId = cleanChan ? parseInt(cleanChan, 10) : null;
 
@@ -268,20 +278,20 @@ userRouter.post("/favorites", async (req: Request, res: Response): Promise<void>
  * DELETE /api/user/favorites/:channelId
  * Removes a channel from user's favorites in MySQL.
  */
-userRouter.delete("/favorites/:channelId", async (req: Request, res: Response): Promise<void> => {
+userRouter.delete("/favorites/:channelId", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const cleanChan = String(req.params.channelId || "").replace(/^db-/, "").trim();
     const channelId = cleanChan ? parseInt(cleanChan, 10) : null;
-    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const targetUserId = req.user?.id || (req.query.userId ? parseInt(String(req.query.userId), 10) : null);
 
-    if (!userId || !channelId) {
+    if (!targetUserId || !channelId) {
       res.status(400).json({ success: false, error: "userId and channelId are required" });
       return;
     }
 
     await pool.query(
       "DELETE FROM user_favorites WHERE user_id = ? AND channel_id = ?",
-      [userId, channelId]
+      [targetUserId, channelId]
     );
 
     res.json({ success: true, message: "Removed from favorites." });
@@ -293,17 +303,19 @@ userRouter.delete("/favorites/:channelId", async (req: Request, res: Response): 
 /**
  * GET /api/user/notifications
  */
-userRouter.get("/notifications", async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/notifications", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    if (!userId) {
+    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
+    const targetUserId = req.user?.id || requestedUserId;
+
+    if (!targetUserId) {
       res.json({ success: true, notifications: [] });
       return;
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 50",
-      [userId]
+      [targetUserId]
     );
 
     res.json({ success: true, notifications: rows });
@@ -315,10 +327,17 @@ userRouter.get("/notifications", async (req: Request, res: Response): Promise<vo
 /**
  * PATCH /api/user/notifications/:id/read
  */
-userRouter.patch("/notifications/:id/read", async (req: Request, res: Response): Promise<void> => {
+userRouter.patch("/notifications/:id/read", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const notifId = parseInt(req.params.id as string, 10);
-    await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ?", [notifId]);
+    const targetUserId = req.user?.id;
+
+    if (targetUserId) {
+      await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?", [notifId, targetUserId]);
+    } else {
+      await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ?", [notifId]);
+    }
+
     res.json({ success: true });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });

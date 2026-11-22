@@ -48,6 +48,10 @@ export default function SocialMediaPage() {
       if (stored) {
         setPendingBuy(JSON.parse(stored));
       }
+      const p = new URLSearchParams(window.location.search).get("platform");
+      if (p && ["telegram", "youtube", "tiktok", "instagram", "facebook"].includes(p.toLowerCase())) {
+        setPlatform(p.toLowerCase() as PlatformType);
+      }
     } catch {}
   }, []);
 

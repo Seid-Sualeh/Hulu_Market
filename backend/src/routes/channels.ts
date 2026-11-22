@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
+import { optionalAuth } from "../middleware/auth.js";
 
 export const channelsRouter = Router();
 
@@ -32,7 +33,7 @@ channelsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
  * POST /api/channels
  * Allows a seller to list a channel for sale. Created with status = 'pending'.
  */
-channelsRouter.post("/", async (req: Request, res: Response): Promise<void> => {
+channelsRouter.post("/", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const {
       sellerId,
@@ -61,7 +62,7 @@ channelsRouter.post("/", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const targetSellerId = sellerId ? parseInt(String(sellerId), 10) : null;
+    const targetSellerId = req.user?.id || (sellerId ? parseInt(String(sellerId), 10) : null);
 
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO channels (
@@ -118,7 +119,7 @@ channelsRouter.post("/", async (req: Request, res: Response): Promise<void> => {
  * PATCH /api/channels/:id/resubmit
  * Allows a seller to correct and resubmit a rejected channel listing for review.
  */
-channelsRouter.patch("/:id/resubmit", async (req: Request, res: Response): Promise<void> => {
+channelsRouter.patch("/:id/resubmit", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const channelId = parseInt(req.params.id as string, 10);
     const {
@@ -148,7 +149,9 @@ channelsRouter.patch("/:id/resubmit", async (req: Request, res: Response): Promi
     }
 
     const channel = existing[0];
-    if (sellerId && channel.seller_id && Number(sellerId) !== Number(channel.seller_id)) {
+    const currentUserId = req.user?.id || (sellerId ? Number(sellerId) : null);
+
+    if (!currentUserId || (channel.seller_id && Number(channel.seller_id) !== currentUserId && req.user?.role !== "admin")) {
       res.status(403).json({ success: false, error: "Unauthorized. You are not the owner of this listing." });
       return;
     }

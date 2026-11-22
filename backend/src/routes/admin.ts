@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
+import { requireAdmin } from "../middleware/auth.js";
 
 export const adminRouter = Router();
 
@@ -8,18 +9,7 @@ export const adminRouter = Router();
  * Middleware: RBAC Enforcement
  * Ensures only users with admin role can access administrative endpoints.
  */
-adminRouter.use((req: Request, res: Response, next) => {
-  const role = req.headers["x-user-role"];
-  // In development, if no role header sent or role is admin, allow
-  if (role && role !== "admin") {
-    res.status(403).json({
-      success: false,
-      error: "Access denied. Administrator privileges required.",
-    });
-    return;
-  }
-  next();
-});
+adminRouter.use(requireAdmin);
 
 /**
  * GET /api/admin/overview
@@ -310,6 +300,7 @@ adminRouter.get("/transactions", async (_req: Request, res: Response): Promise<v
  * Approves or Rejects a transaction (deposit, withdrawal).
  */
 adminRouter.patch("/transactions/:id", async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
   try {
     const txId = parseInt(req.params.id as string, 10);
     const { status, adminNotes } = req.body;
@@ -319,51 +310,65 @@ adminRouter.patch("/transactions/:id", async (req: Request, res: Response): Prom
       return;
     }
 
-    // Retrieve transaction
-    const [rows]: [RowDataPacket[], unknown] = await pool.query(
-      "SELECT * FROM transactions WHERE id = ? LIMIT 1",
+    await conn.beginTransaction();
+
+    // Lock transaction row with FOR UPDATE
+    const [rows] = await conn.query<RowDataPacket[]>(
+      "SELECT * FROM transactions WHERE id = ? FOR UPDATE",
       [txId]
     );
 
     if (rows.length === 0) {
+      await conn.rollback();
       res.status(404).json({ success: false, error: "Transaction not found" });
       return;
     }
 
     const tx = rows[0];
 
-    // If changing from pending to approved:
-    if (tx.status === "pending" && (status === "approved" || status === "completed")) {
+    // Prevent double processing
+    if (tx.status !== "pending") {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: `Transaction #${txId} is already marked as ${tx.status}. Duplicate processing prevented.`,
+      });
+      return;
+    }
+
+    // Process transition
+    if (status === "approved" || status === "completed") {
       if (tx.type === "deposit") {
-        // Credit user balance
-        await pool.query(
+        await conn.query(
           "UPDATE users SET balance = balance + ? WHERE id = ?",
           [tx.amount, tx.user_id]
         );
       } else if (tx.type === "withdrawal") {
-        // Deduct from locked balance
-        await pool.query(
+        await conn.query(
           "UPDATE users SET locked_balance = GREATEST(0, locked_balance - ?) WHERE id = ?",
           [tx.amount, tx.user_id]
         );
       }
-    } else if (tx.status === "pending" && status === "rejected") {
+    } else if (status === "rejected") {
       if (tx.type === "withdrawal") {
-        // Refund user balance from locked balance
-        await pool.query(
+        await conn.query(
           "UPDATE users SET balance = balance + ?, locked_balance = GREATEST(0, locked_balance - ?) WHERE id = ?",
           [tx.amount, tx.amount, tx.user_id]
         );
       }
     }
 
-    await pool.query(
+    await conn.query(
       "UPDATE transactions SET status = ?, admin_notes = ? WHERE id = ?",
       [status, adminNotes || tx.admin_notes, txId]
     );
 
+    await conn.commit();
     res.json({ success: true, message: `Transaction #${txId} marked as ${status}` });
   } catch (error: unknown) {
+    await conn.rollback();
     res.status(500).json({ success: false, error: (error as Error).message });
+  } finally {
+    conn.release();
   }
 });

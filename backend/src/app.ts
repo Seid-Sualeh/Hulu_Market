@@ -14,14 +14,22 @@ import { uploadRouter } from "./routes/upload.js";
 export function createApp(frontendOrigin?: string) {
   const app = express();
 
-  app.use(helmet());
+  // Configure Helmet with relaxed cross-origin resource policy for uploaded media
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+  );
+
   app.use(
     cors({
       origin: frontendOrigin && frontendOrigin !== "*" ? frontendOrigin : true,
       credentials: true,
     })
   );
-  app.use(express.json());
+  app.use(express.json({ limit: "2mb" }));
+
+  // Global rate limiter
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,
@@ -29,7 +37,6 @@ export function createApp(frontendOrigin?: string) {
       standardHeaders: "draft-8",
       legacyHeaders: false,
       skip: (req) => {
-        // Skip rate-limiting in development or for local proxy / loopback requests
         if (process.env.NODE_ENV !== "production") return true;
         const ip = req.ip || req.socket.remoteAddress || "";
         return ip.includes("127.0.0.1") || ip.includes("::1") || ip.includes("localhost");
@@ -38,8 +45,20 @@ export function createApp(frontendOrigin?: string) {
         success: false,
         error: "Too many requests from this IP, please try again after 15 minutes.",
       },
-    }),
+    })
   );
+
+  // Stricter rate limiter specifically for Authentication endpoints (prevent brute force)
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: process.env.NODE_ENV === "production" ? 30 : 1000,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: {
+      success: false,
+      error: "Too many authentication attempts. Please wait 15 minutes before trying again.",
+    },
+  });
 
   const healthCheck = (_request: express.Request, response: express.Response) => {
     response.json({ name: "hulu-market-backend", status: "ok" });
@@ -49,9 +68,9 @@ export function createApp(frontendOrigin?: string) {
   app.get("/health", healthCheck);
   app.get("/api/health", healthCheck);
 
-  // Mount Auth routes (supported both with and without /api prefix)
-  app.use("/auth", authRouter);
-  app.use("/api/auth", authRouter);
+  // Mount Auth routes with authLimiter
+  app.use("/auth", authLimiter, authRouter);
+  app.use("/api/auth", authLimiter, authRouter);
 
   // Mount Admin routes
   app.use("/admin", adminRouter);
@@ -80,6 +99,17 @@ export function createApp(frontendOrigin?: string) {
   // Serve static uploaded files
   const uploadsPath = path.resolve("uploads");
   app.use("/uploads", express.static(uploadsPath));
+
+  // Global Express JSON error handler (avoids exposing stack traces or raw database errors)
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const error = err as Error;
+    console.error("[Unhandled Application Error]:", error);
+    res.status(500).json({
+      success: false,
+      error: "An unexpected server error occurred. Please try again later.",
+      details: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  });
 
   return app;
 }
