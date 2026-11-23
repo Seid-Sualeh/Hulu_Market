@@ -28,7 +28,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { fetchBackend } from "@/lib/api";
+import { fetchBackend, resolveImageUrl } from "@/lib/api";
 
 type OrderTab = "processing" | "success" | "cancelled";
 
@@ -166,7 +166,7 @@ export default function InboxPage() {
     try {
       const formData = new FormData();
       formData.append("file", file, filename || "upload");
-      const res = await fetchBackend("upload", { method: "POST", body: formData });
+      const res = await fetchBackend("upload?visibility=private", { method: "POST", body: formData });
       const data = await res.json();
       return data.success ? data.url : null;
     } catch {
@@ -315,18 +315,16 @@ export default function InboxPage() {
     e.preventDefault();
     if (!adminChatInput.trim()) return;
     const userMsg = adminChatInput.trim();
-    setAdminMessages((prev) => [...prev, { sender: "user", text: userMsg, time: "Just now" }]);
+    setAdminMessages((prev) => [
+      ...prev,
+      { sender: "user", text: userMsg, time: "Just now" },
+      {
+        sender: "admin",
+        text: "Direct ticket support is currently offline for system maintenance. Please note that all active dispute mediation and live support is provided by Hulu Admin inside your specific Escrow Order chats below.",
+        time: "Notice",
+      },
+    ]);
     setAdminChatInput("");
-    setTimeout(() => {
-      setAdminMessages((prev) => [
-        ...prev,
-        {
-          sender: "admin",
-          text: "Thank you for reaching out! A Hulu Market support officer has received your request and will review it promptly.",
-          time: "Just now",
-        },
-      ]);
-    }, 1000);
   };
 
   const filteredOrders = orders.filter((o) => {
@@ -386,8 +384,7 @@ export default function InboxPage() {
   // Resolve attachment URL through backend server
   const resolveUrl = (url: string | null) => {
     if (!url) return "";
-    if (url.startsWith("http")) return url;
-    return url.startsWith("/") ? url : `/${url}`;
+    return resolveImageUrl(url);
   };
 
   return (
@@ -926,6 +923,11 @@ export default function InboxPage() {
               >
                 <X size={18} />
               </button>
+            </div>
+
+            <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-[11px] text-amber-300 flex items-center gap-2">
+              <Shield size={14} className="shrink-0 text-amber-400" />
+              <span>Direct 1-on-1 support tickets are offline. Live dispute mediation is handled inside active Escrow Trades below.</span>
             </div>
 
             <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">

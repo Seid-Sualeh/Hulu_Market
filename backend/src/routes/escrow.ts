@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
-import { authenticateToken, optionalAuth, requireAdmin } from "../middleware/auth.js";
+import { authenticateToken, requireAdmin } from "../middleware/auth.js";
 
 export const escrowRouter = Router();
 
@@ -9,22 +9,21 @@ export const escrowRouter = Router();
  * POST /api/escrow/order
  * Buyer initiates an escrow purchase of a channel.
  * Price and channel availability are verified directly against the database to prevent manipulation.
+ * Identity is derived strictly from the verified JWT (req.user). Client buyerId is strictly ignored.
  */
-escrowRouter.post("/order", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+escrowRouter.post("/order", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const conn = await pool.getConnection();
   try {
     const {
       channelId,
       channelName,
       platform,
-      price,
-      buyerId,
-      buyerName,
       sellerId,
       sellerName,
     } = req.body;
 
-    const bId = req.user?.id || (buyerId ? parseInt(String(buyerId), 10) : null);
+    // Derive buyer ID exclusively from the verified authenticated user
+    const bId = req.user!.id;
     if (!bId) {
       res.status(401).json({ success: false, error: "Please sign in before initiating a purchase." });
       return;
@@ -97,8 +96,8 @@ escrowRouter.post("/order", optionalAuth, async (req: Request, res: Response): P
     // 3. Mark channel as ongoing / in escrow
     await conn.query("UPDATE channels SET status = 'sold' WHERE id = ?", [cId]);
 
-    // 4. Insert escrow order
-    const actualBuyerName = buyerName || req.user?.email || "Buyer";
+    // 4. Insert escrow order with authenticated buyer identity
+    const actualBuyerName = req.user?.email ? req.user.email.split("@")[0] : `User #${bId}`;
     const actualSellerName = sellerName || channel.seller_username || "Seller";
 
     const [orderResult] = await conn.query<ResultSetHeader>(
@@ -162,22 +161,17 @@ escrowRouter.post("/order", optionalAuth, async (req: Request, res: Response): P
 /**
  * GET /api/escrow/orders
  * Returns list of escrow orders.
- * Admin can see all orders; users only see orders where they are the buyer or seller.
+ * Admin can see all orders; users only see orders where they are the verified buyer or seller.
  */
-escrowRouter.get("/orders", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+escrowRouter.get("/orders", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    const targetUserId = req.user?.id || requestedUserId;
     const isAdmin = req.user?.role === "admin";
+    const targetUserId = req.user!.id;
 
     let query = "SELECT * FROM escrow_orders";
     const params: (number | string)[] = [];
 
     if (!isAdmin) {
-      if (!targetUserId) {
-        res.json({ success: true, orders: [] });
-        return;
-      }
       query += " WHERE buyer_id = ? OR seller_id = ?";
       params.push(targetUserId, targetUserId);
     }
@@ -194,9 +188,9 @@ escrowRouter.get("/orders", optionalAuth, async (req: Request, res: Response): P
 /**
  * GET /api/escrow/orders/:id/messages
  * Retrieves chat history for a specific escrow trade.
- * Enforces participant check: only buyer, seller, or admin can read messages.
+ * Enforces participant check: only verified buyer, seller, or admin can read messages.
  */
-escrowRouter.get("/orders/:id/messages", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+escrowRouter.get("/orders/:id/messages", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const orderId = parseInt(req.params.id as string, 10);
     if (isNaN(orderId)) {
@@ -215,17 +209,13 @@ escrowRouter.get("/orders/:id/messages", optionalAuth, async (req: Request, res:
     }
 
     const order = orderRows[0];
-    const currentUserId = req.user?.id;
-    const isAdmin = req.user?.role === "admin";
+    const currentUserId = req.user!.id;
+    const isAdmin = req.user!.role === "admin";
 
-    // Participant verification
+    // Strict participant verification based solely on verified JWT
     if (!isAdmin && currentUserId !== Number(order.buyer_id) && currentUserId !== Number(order.seller_id)) {
-      // In development, allow fallback if no token but user matches header
-      const fallbackId = req.headers["x-user-id"] ? parseInt(String(req.headers["x-user-id"]), 10) : null;
-      if (!fallbackId || (fallbackId !== Number(order.buyer_id) && fallbackId !== Number(order.seller_id))) {
-        res.status(403).json({ success: false, error: "Access denied. You are not a participant in this trade." });
-        return;
-      }
+      res.status(403).json({ success: false, error: "Access denied. You are not a participant in this trade." });
+      return;
     }
 
     const [messages] = await pool.query<RowDataPacket[]>(
@@ -241,9 +231,9 @@ escrowRouter.get("/orders/:id/messages", optionalAuth, async (req: Request, res:
 /**
  * POST /api/escrow/orders/:id/messages
  * Sends a message in the 3-way escrow chat (buyer, seller, or admin).
- * Enforces sender role based on verified user identity.
+ * Enforces sender role strictly based on verified user identity.
  */
-escrowRouter.post("/orders/:id/messages", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+escrowRouter.post("/orders/:id/messages", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const orderId = parseInt(req.params.id as string, 10);
     const { message, messageType, attachmentUrl } = req.body;
@@ -273,11 +263,12 @@ escrowRouter.post("/orders/:id/messages", optionalAuth, async (req: Request, res
       return;
     }
 
-    // Determine sender identity and role securely
-    const currentUserId = req.user?.id || (req.body.senderId ? parseInt(String(req.body.senderId), 10) : 0);
-    let actualRole: "buyer" | "seller" | "admin" = "buyer";
+    // Determine sender identity and role strictly from verified JWT
+    const currentUserId = req.user!.id;
+    const isAdmin = req.user!.role === "admin";
+    let actualRole: "buyer" | "seller" | "admin";
 
-    if (req.user?.role === "admin" || req.headers["x-user-role"] === "admin") {
+    if (isAdmin) {
       actualRole = "admin";
     } else if (currentUserId === Number(order.seller_id)) {
       actualRole = "seller";
@@ -288,7 +279,9 @@ escrowRouter.post("/orders/:id/messages", optionalAuth, async (req: Request, res
       return;
     }
 
-    const senderDisplayName = req.user?.email?.split("@")[0] || req.body.senderName || (actualRole === "admin" ? "Hulu Admin" : actualRole.toUpperCase());
+    const senderDisplayName = isAdmin
+      ? "Hulu Admin"
+      : req.user!.email ? req.user!.email.split("@")[0] : `User #${currentUserId}`;
 
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type, attachment_url)
@@ -504,12 +497,13 @@ escrowRouter.post("/orders/:id/request-confirmation", requireAdmin, async (req: 
 /**
  * PATCH /api/escrow/orders/:id/confirm
  * Buyer or seller confirms ownership transfer completion.
- * Enforces that only the genuine buyer can confirm as buyer, and only genuine seller can confirm as seller.
+ * Enforces that only the verified authenticated buyer can confirm as buyer, and only verified seller can confirm as seller.
+ * Identity is derived exclusively from the verified JWT (req.user.id).
  */
-escrowRouter.patch("/orders/:id/confirm", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const orderId = parseInt(req.params.id as string, 10);
-    const { role, userId } = req.body; // role: 'buyer' | 'seller'
+    const { role } = req.body; // role: 'buyer' | 'seller'
 
     if (!role || !["buyer", "seller"].includes(role)) {
       res.status(400).json({ success: false, error: "Role must be 'buyer' or 'seller'." });
@@ -532,21 +526,36 @@ escrowRouter.patch("/orders/:id/confirm", optionalAuth, async (req: Request, res
       return;
     }
 
-    // Determine confirming user id
-    const currentUserId = req.user?.id || (userId ? parseInt(String(userId), 10) : null);
-    if (!currentUserId) {
-      res.status(401).json({ success: false, error: "Authentication required to confirm trade completion." });
+    if (order.status !== "processing") {
+      res.status(400).json({
+        success: false,
+        error: `Cannot confirm trade in '${order.status}' status. Confirmations are only accepted while processing.`,
+      });
       return;
     }
 
-    // Strict identity check: user MUST match the respective side of the trade
-    if (role === "buyer" && Number(order.buyer_id) !== currentUserId) {
-      res.status(403).json({ success: false, error: "Only the buyer of this trade can confirm as buyer." });
-      return;
-    }
-    if (role === "seller" && Number(order.seller_id) !== currentUserId) {
-      res.status(403).json({ success: false, error: "Only the seller of this trade can confirm as seller." });
-      return;
+    // Determine confirming user id strictly from verified JWT
+    const currentUserId = req.user!.id;
+
+    // Strict identity check: authenticated user MUST match the respective side of the trade
+    if (role === "buyer") {
+      if (Number(order.buyer_id) !== currentUserId) {
+        res.status(403).json({ success: false, error: "Only the verified buyer of this trade can confirm as buyer." });
+        return;
+      }
+      if (order.buyer_confirmed) {
+        res.status(400).json({ success: false, error: "Buyer confirmation has already been recorded for this trade." });
+        return;
+      }
+    } else if (role === "seller") {
+      if (Number(order.seller_id) !== currentUserId) {
+        res.status(403).json({ success: false, error: "Only the verified seller of this trade can confirm as seller." });
+        return;
+      }
+      if (order.seller_confirmed) {
+        res.status(400).json({ success: false, error: "Seller confirmation has already been recorded for this trade." });
+        return;
+      }
     }
 
     // Update the confirmation flag

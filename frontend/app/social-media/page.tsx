@@ -549,7 +549,8 @@ export default function SocialMediaPage() {
       <div className="fixed bottom-6 right-6 z-30 flex flex-col items-center gap-2">
         <button
           type="button"
-          title="Earn ETB"
+          onClick={() => router.push("/sell")}
+          title="Earn ETB - Sell channels and digital properties"
           className="grid size-12 place-items-center rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 shadow-xl shadow-amber-500/30 transition hover:scale-105 active:scale-95"
         >
           <Zap size={22} className="fill-slate-950" />

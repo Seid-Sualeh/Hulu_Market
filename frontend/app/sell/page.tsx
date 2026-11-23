@@ -330,7 +330,7 @@ function SellPageInner() {
       if (screenshotFile) {
         const formData = new FormData();
         formData.append("file", screenshotFile);
-        const uploadRes = await fetchBackend("upload", {
+        const uploadRes = await fetchBackend("upload?visibility=public", {
           method: "POST",
           body: formData,
         });

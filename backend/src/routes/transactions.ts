@@ -1,17 +1,17 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
-import { authenticateToken, optionalAuth } from "../middleware/auth.js";
+import { authenticateToken } from "../middleware/auth.js";
 
 export const transactionsRouter = Router();
 
 /**
  * POST /api/transactions/deposit
- * Submits a new deposit receipt from the user.
+ * Submits a new deposit receipt from the verified authenticated user.
  */
-transactionsRouter.post("/deposit", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+transactionsRouter.post("/deposit", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId, amount, paymentMethod, accountNumber, accountName, referenceCode, screenshotUrl } = req.body;
+    const { amount, paymentMethod, accountNumber, accountName, referenceCode, screenshotUrl } = req.body;
 
     const numAmount = Number(amount);
     if (!numAmount || isNaN(numAmount) || numAmount <= 0) {
@@ -24,12 +24,8 @@ transactionsRouter.post("/deposit", optionalAuth, async (req: Request, res: Resp
       return;
     }
 
-    // Determine target user id: from authenticated token, or verified fallback
-    const targetUserId = req.user?.id || (userId ? parseInt(String(userId), 10) : null);
-    if (!targetUserId) {
-      res.status(401).json({ success: false, error: "Please sign in before submitting a deposit." });
-      return;
-    }
+    // Derive target user id strictly from verified JWT
+    const targetUserId = req.user!.id;
 
     const refCode = referenceCode || `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
 
@@ -136,21 +132,10 @@ transactionsRouter.post("/withdraw", authenticateToken, async (req: Request, res
  * GET /api/transactions/my
  * Retrieves transaction history for the authenticated user.
  */
-transactionsRouter.get("/my", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+transactionsRouter.get("/my", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    const targetUserId = req.user?.id || requestedUserId;
-
-    if (!targetUserId) {
-      res.json({ success: true, transactions: [] });
-      return;
-    }
-
-    // Non-admin can only see their own transactions
-    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
-      res.status(403).json({ success: false, error: "Access denied." });
-      return;
-    }
+    const isAdmin = req.user?.role === "admin";
+    const targetUserId = isAdmin && req.query.userId ? parseInt(String(req.query.userId), 10) : req.user!.id;
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT * FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 50`,

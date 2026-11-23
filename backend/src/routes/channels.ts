@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
-import { optionalAuth } from "../middleware/auth.js";
+import { authenticateToken } from "../middleware/auth.js";
 
 export const channelsRouter = Router();
 
@@ -31,12 +31,11 @@ channelsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 
 /**
  * POST /api/channels
- * Allows a seller to list a channel for sale. Created with status = 'pending'.
+ * Allows an authenticated seller to list a channel for sale. Created with status = 'pending'.
  */
-channelsRouter.post("/", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+channelsRouter.post("/", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const {
-      sellerId,
       name,
       platform,
       category,
@@ -62,7 +61,7 @@ channelsRouter.post("/", optionalAuth, async (req: Request, res: Response): Prom
       return;
     }
 
-    const targetSellerId = req.user?.id || (sellerId ? parseInt(String(sellerId), 10) : null);
+    const targetSellerId = req.user!.id;
 
     const [result] = await pool.query<ResultSetHeader>(
       `INSERT INTO channels (
@@ -117,9 +116,9 @@ channelsRouter.post("/", optionalAuth, async (req: Request, res: Response): Prom
 
 /**
  * PATCH /api/channels/:id/resubmit
- * Allows a seller to correct and resubmit a rejected channel listing for review.
+ * Allows an authenticated seller to correct and resubmit a rejected channel listing for review.
  */
-channelsRouter.patch("/:id/resubmit", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+channelsRouter.patch("/:id/resubmit", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const channelId = parseInt(req.params.id as string, 10);
     const {
@@ -135,7 +134,6 @@ channelsRouter.patch("/:id/resubmit", optionalAuth, async (req: Request, res: Re
       description,
       seller_username,
       seller_phone,
-      sellerId,
     } = req.body;
 
     const [existing] = await pool.query<RowDataPacket[]>(
@@ -149,9 +147,9 @@ channelsRouter.patch("/:id/resubmit", optionalAuth, async (req: Request, res: Re
     }
 
     const channel = existing[0];
-    const currentUserId = req.user?.id || (sellerId ? Number(sellerId) : null);
+    const currentUserId = req.user!.id;
 
-    if (!currentUserId || (channel.seller_id && Number(channel.seller_id) !== currentUserId && req.user?.role !== "admin")) {
+    if (channel.seller_id && Number(channel.seller_id) !== currentUserId && req.user?.role !== "admin") {
       res.status(403).json({ success: false, error: "Unauthorized. You are not the owner of this listing." });
       return;
     }
@@ -204,17 +202,13 @@ channelsRouter.patch("/:id/resubmit", optionalAuth, async (req: Request, res: Re
 
 /**
  * GET /api/channels/my
- * Returns channels submitted by a particular seller.
+ * Returns channels submitted by the authenticated seller.
  * Must be defined BEFORE /:id route in Express!
  */
-channelsRouter.get("/my", async (req: Request, res: Response): Promise<void> => {
+channelsRouter.get("/my", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const sellerId = req.query.sellerId ? parseInt(String(req.query.sellerId), 10) : null;
-
-    if (!sellerId || isNaN(sellerId)) {
-      res.json({ success: true, channels: [] });
-      return;
-    }
+    const isAdmin = req.user?.role === "admin";
+    const sellerId = isAdmin && req.query.sellerId ? parseInt(String(req.query.sellerId), 10) : req.user!.id;
 
     const [channels] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM channels WHERE seller_id = ? ORDER BY id DESC",

@@ -26,11 +26,15 @@ export function getJwtSecret(): string {
     }
     return "hulu_market_jwt_secret_dev_key_change_in_production";
   }
+  if (process.env.NODE_ENV === "production" && secret.length < 32) {
+    throw new Error("[Security Error] JWT_SECRET must be at least 32 characters in production!");
+  }
   return secret;
 }
 
 /**
- * Extracts and verifies JWT from Authorization header or fallback x-user-id in development.
+ * Extracts and verifies JWT strictly from Authorization header.
+ * Eliminates all untrusted header (x-user-id) and body/query fallbacks.
  */
 export async function authenticateToken(
   req: Request,
@@ -74,30 +78,6 @@ export async function authenticateToken(
         error: "Session expired or invalid token. Please sign in again.",
       });
       return;
-    }
-  }
-
-  // Fallback for transitional requests: check if valid x-user-id header exists
-  // In development, or if token not yet provided, verify user from DB
-  const rawUserId = req.headers["x-user-id"] || req.body?.userId || req.query?.userId;
-  if (rawUserId && process.env.NODE_ENV !== "production") {
-    const parsedId = parseInt(String(rawUserId), 10);
-    if (!isNaN(parsedId)) {
-      try {
-        const [rows] = await pool.query<RowDataPacket[]>(
-          "SELECT id, email, role FROM users WHERE id = ? LIMIT 1",
-          [parsedId]
-        );
-        if (rows.length > 0) {
-          req.user = {
-            id: Number(rows[0].id),
-            email: String(rows[0].email),
-            role: rows[0].role === "admin" ? "admin" : "user",
-          };
-          next();
-          return;
-        }
-      } catch {}
     }
   }
 

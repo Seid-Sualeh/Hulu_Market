@@ -1,126 +1,87 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket } from "mysql2/promise";
 import { pool } from "../config/db.js";
-import { authenticateToken, optionalAuth } from "../middleware/auth.js";
+import { authenticateToken } from "../middleware/auth.js";
 
 export const userRouter = Router();
 
 /**
  * GET /api/user/stats
- * Returns live financial and listing statistics for the user dashboard.
+ * Returns live financial and listing statistics for the authenticated user dashboard.
  */
-userRouter.get("/stats", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/stats", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    const targetUserId = req.user?.id || requestedUserId;
+    const isAdmin = req.user?.role === "admin";
+    const targetUserId = isAdmin && req.query.userId ? parseInt(String(req.query.userId), 10) : req.user!.id;
 
-    if (!targetUserId) {
-      res.json({
-        success: true,
-        stats: {
-          balance: 0,
-          lockedBalance: 0,
-          income: 0,
-          soldChannels: 0,
-          totalChannels: 0,
-          pendingChannels: 0,
-          approvedDeposits: 0,
-          pendingDeposits: 0,
-          rejectedDeposits: 0,
-          approvedWithdrawals: 0,
-          pendingWithdrawals: 0,
-          rejectedWithdrawals: 0,
-        },
-      });
-      return;
-    }
-
-    // Only allow querying own stats unless admin
-    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
-      res.status(403).json({ success: false, error: "Access denied." });
-      return;
-    }
-
-    // 1. Fetch user record
+    // 1. Fetch user's wallet balance & locked balance
     const [userRows] = await pool.query<RowDataPacket[]>(
-      "SELECT id, balance, locked_balance FROM users WHERE id = ? LIMIT 1",
+      "SELECT balance, locked_balance FROM users WHERE id = ? LIMIT 1",
       [targetUserId]
     );
 
-    const balance = userRows.length > 0 ? Number(userRows[0].balance) : 0;
-    const lockedBalance = userRows.length > 0 ? Number(userRows[0].locked_balance) : 0;
+    const balance = userRows.length > 0 ? Number(userRows[0].balance) || 0 : 0;
+    const lockedBalance = userRows.length > 0 ? Number(userRows[0].locked_balance) || 0 : 0;
 
-    // 2. Fetch channel counts
-    const [channelRows] = await pool.query<RowDataPacket[]>(
-      `SELECT 
+    // 2. Fetch channel listings stats for this user as seller
+    const [channelStats] = await pool.query<RowDataPacket[]>(
+      `SELECT
         COUNT(*) AS totalChannels,
-        SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) AS soldChannels,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingChannels,
-        COALESCE(SUM(CASE WHEN status = 'sold' THEN price ELSE 0 END), 0) AS totalIncome
-       FROM channels WHERE seller_id = ?`,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS activeChannels,
+        SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) AS soldChannels,
+        COALESCE(SUM(CASE WHEN status = 'sold' THEN price ELSE 0 END), 0) AS totalSalesVolume
+       FROM channels
+       WHERE seller_id = ?`,
       [targetUserId]
     );
 
-    const totalChannels = Number(channelRows[0]?.totalChannels || 0);
-    const soldChannels = Number(channelRows[0]?.soldChannels || 0);
-    const pendingChannels = Number(channelRows[0]?.pendingChannels || 0);
-    const totalIncome = Number(channelRows[0]?.totalIncome || 0);
-
-    // 3. Fetch transaction metrics
-    const [txRows] = await pool.query<RowDataPacket[]>(
-      `SELECT 
-        COALESCE(SUM(CASE WHEN type = 'deposit' AND status = 'approved' THEN amount ELSE 0 END), 0) AS approvedDeposits,
-        COALESCE(SUM(CASE WHEN type = 'deposit' AND status = 'pending' THEN amount ELSE 0 END), 0) AS pendingDeposits,
-        SUM(CASE WHEN type = 'deposit' AND status = 'rejected' THEN 1 ELSE 0 END) AS rejectedDeposits,
-        COALESCE(SUM(CASE WHEN type = 'withdrawal' AND status = 'approved' THEN amount ELSE 0 END), 0) AS approvedWithdrawals,
-        COALESCE(SUM(CASE WHEN type = 'withdrawal' AND status = 'pending' THEN amount ELSE 0 END), 0) AS pendingWithdrawals,
-        SUM(CASE WHEN type = 'withdrawal' AND status = 'rejected' THEN 1 ELSE 0 END) AS rejectedWithdrawals
-       FROM transactions WHERE user_id = ?`,
+    // 3. Fetch deposit transactions stats for this user
+    const [depositStats] = await pool.query<RowDataPacket[]>(
+      `SELECT
+        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approvedDeposits,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingDeposits,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejectedDeposits,
+        COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) AS totalDeposited
+       FROM transactions
+       WHERE user_id = ? AND type = 'deposit'`,
       [targetUserId]
     );
 
-    // 4. Fetch recent transactions
-    const [recentTxRows] = await pool.query<RowDataPacket[]>(
-      `SELECT id, type, amount, payment_method, reference_code, status, created_at 
-       FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 5`,
+    // 4. Fetch withdrawal transactions stats for this user
+    const [withdrawalStats] = await pool.query<RowDataPacket[]>(
+      `SELECT
+        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approvedWithdrawals,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingWithdrawals,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejectedWithdrawals,
+        COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) AS totalWithdrawn
+       FROM transactions
+       WHERE user_id = ? AND type = 'withdrawal'`,
       [targetUserId]
     );
 
-    // 5. Fetch recent channel listings
-    const [recentChannelRows] = await pool.query<RowDataPacket[]>(
-      `SELECT id, name, platform, category, subscribers, price, status, created_at 
-       FROM channels WHERE seller_id = ? ORDER BY id DESC LIMIT 5`,
-      [targetUserId]
-    );
-
-    // 6. Fetch active escrow orders
-    const [escrowRows] = await pool.query<RowDataPacket[]>(
-      `SELECT id, channel_name, platform, buyer_id, seller_id, amount, status, is_closed, buyer_confirmed, seller_confirmed, created_at
-       FROM escrow_orders 
-       WHERE (buyer_id = ? OR seller_id = ?) 
-       ORDER BY id DESC LIMIT 5`,
-      [targetUserId, targetUserId]
-    );
+    // 5. Total earned income from sold channels
+    const income = Number(channelStats[0]?.totalSalesVolume) || 0;
 
     res.json({
       success: true,
       stats: {
         balance,
         lockedBalance,
-        income: totalIncome,
-        soldChannels,
-        totalChannels,
-        pendingChannels,
-        approvedDeposits: Number(txRows[0]?.approvedDeposits || 0),
-        pendingDeposits: Number(txRows[0]?.pendingDeposits || 0),
-        rejectedDeposits: Number(txRows[0]?.rejectedDeposits || 0),
-        approvedWithdrawals: Number(txRows[0]?.approvedWithdrawals || 0),
-        pendingWithdrawals: Number(txRows[0]?.pendingWithdrawals || 0),
-        rejectedWithdrawals: Number(txRows[0]?.rejectedWithdrawals || 0),
+        income,
+        soldChannels: Number(channelStats[0]?.soldChannels) || 0,
+        totalChannels: Number(channelStats[0]?.totalChannels) || 0,
+        pendingChannels: Number(channelStats[0]?.pendingChannels) || 0,
+        activeChannels: Number(channelStats[0]?.activeChannels) || 0,
+        approvedDeposits: Number(depositStats[0]?.approvedDeposits) || 0,
+        pendingDeposits: Number(depositStats[0]?.pendingDeposits) || 0,
+        rejectedDeposits: Number(depositStats[0]?.rejectedDeposits) || 0,
+        totalDeposited: Number(depositStats[0]?.totalDeposited) || 0,
+        approvedWithdrawals: Number(withdrawalStats[0]?.approvedWithdrawals) || 0,
+        pendingWithdrawals: Number(withdrawalStats[0]?.pendingWithdrawals) || 0,
+        rejectedWithdrawals: Number(withdrawalStats[0]?.rejectedWithdrawals) || 0,
+        totalWithdrawn: Number(withdrawalStats[0]?.totalWithdrawn) || 0,
       },
-      recentTransactions: recentTxRows,
-      recentChannels: recentChannelRows,
-      recentEscrows: escrowRows,
     });
   } catch (error: unknown) {
     const err = error as Error;
@@ -132,20 +93,10 @@ userRouter.get("/stats", optionalAuth, async (req: Request, res: Response): Prom
 /**
  * GET /api/user/profile
  */
-userRouter.get("/profile", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/profile", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    const targetUserId = req.user?.id || requestedUserId;
-
-    if (!targetUserId) {
-      res.status(400).json({ success: false, error: "userId required" });
-      return;
-    }
-
-    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
-      res.status(403).json({ success: false, error: "Access denied." });
-      return;
-    }
+    const isAdmin = req.user?.role === "admin";
+    const targetUserId = isAdmin && req.query.userId ? parseInt(String(req.query.userId), 10) : req.user!.id;
 
     const [rows] = await pool.query<RowDataPacket[]>(
       "SELECT id, first_name, last_name, email, phone, balance, locked_balance, role, created_at FROM users WHERE id = ? LIMIT 1",
@@ -165,24 +116,35 @@ userRouter.get("/profile", optionalAuth, async (req: Request, res: Response): Pr
 
 /**
  * PATCH /api/user/profile
- * Updates user profile details in MySQL.
+ * Updates user profile details in MySQL strictly for the authenticated user.
  */
-userRouter.patch("/profile", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.patch("/profile", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId, firstName, lastName, phone, email } = req.body;
-    const targetUserId = req.user?.id || (userId ? parseInt(String(userId), 10) : null);
+    const { firstName, lastName, phone, email } = req.body;
+    const targetUserId = req.user!.id;
 
-    if (!targetUserId) {
-      res.status(401).json({ success: false, error: "Authentication required to update profile." });
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      "SELECT id, email FROM users WHERE id = ? LIMIT 1",
+      [targetUserId]
+    );
+
+    if (userRows.length === 0) {
+      res.status(404).json({ success: false, error: "User not found." });
       return;
     }
 
-    if (req.user && req.user.role !== "admin" && targetUserId !== req.user.id) {
-      res.status(403).json({ success: false, error: "You can only update your own profile." });
-      return;
+    // If updating email, ensure it's not taken by another user
+    if (email && email.trim().toLowerCase() !== userRows[0].email.toLowerCase()) {
+      const [emailCheck] = await pool.query<RowDataPacket[]>(
+        "SELECT id FROM users WHERE email = ? AND id != ? LIMIT 1",
+        [email.trim().toLowerCase(), targetUserId]
+      );
+      if (emailCheck.length > 0) {
+        res.status(409).json({ success: false, error: "Email is already in use by another account." });
+        return;
+      }
     }
 
-    // Update fields if provided
     await pool.query(
       `UPDATE users SET
         first_name = COALESCE(?, first_name),
@@ -195,20 +157,20 @@ userRouter.patch("/profile", optionalAuth, async (req: Request, res: Response): 
         firstName || null,
         lastName || null,
         phone || null,
-        email || null,
+        email ? email.trim().toLowerCase() : null,
         targetUserId,
       ]
     );
 
-    const [rows] = await pool.query<RowDataPacket[]>(
-      "SELECT id, first_name, last_name, email, phone, balance, locked_balance, role, created_at FROM users WHERE id = ? LIMIT 1",
+    const [updatedRows] = await pool.query<RowDataPacket[]>(
+      "SELECT id, first_name, last_name, email, phone, balance, locked_balance, role FROM users WHERE id = ? LIMIT 1",
       [targetUserId]
     );
 
     res.json({
       success: true,
       message: "Profile updated successfully.",
-      user: rows[0],
+      user: updatedRows[0],
     });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
@@ -217,17 +179,11 @@ userRouter.patch("/profile", optionalAuth, async (req: Request, res: Response): 
 
 /**
  * GET /api/user/favorites
- * Returns channels favorited by the user from MySQL database.
+ * Returns channels favorited by the authenticated user from MySQL database.
  */
-userRouter.get("/favorites", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/favorites", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    const targetUserId = req.user?.id || requestedUserId;
-
-    if (!targetUserId) {
-      res.json({ success: true, favorites: [] });
-      return;
-    }
+    const targetUserId = req.user!.id;
 
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT 
@@ -251,15 +207,15 @@ userRouter.get("/favorites", optionalAuth, async (req: Request, res: Response): 
  * POST /api/user/favorites
  * Adds a channel to user's favorites in MySQL.
  */
-userRouter.post("/favorites", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.post("/favorites", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId, channelId } = req.body;
-    const targetUserId = req.user?.id || (userId ? parseInt(String(userId), 10) : null);
+    const { channelId } = req.body;
+    const targetUserId = req.user!.id;
     const cleanChan = String(channelId || "").replace(/^db-/, "").trim();
     const targetChannelId = cleanChan ? parseInt(cleanChan, 10) : null;
 
-    if (!targetUserId || !targetChannelId) {
-      res.status(400).json({ success: false, error: "userId and channelId are required" });
+    if (!targetChannelId) {
+      res.status(400).json({ success: false, error: "channelId is required" });
       return;
     }
 
@@ -278,14 +234,14 @@ userRouter.post("/favorites", optionalAuth, async (req: Request, res: Response):
  * DELETE /api/user/favorites/:channelId
  * Removes a channel from user's favorites in MySQL.
  */
-userRouter.delete("/favorites/:channelId", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.delete("/favorites/:channelId", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const cleanChan = String(req.params.channelId || "").replace(/^db-/, "").trim();
     const channelId = cleanChan ? parseInt(cleanChan, 10) : null;
-    const targetUserId = req.user?.id || (req.query.userId ? parseInt(String(req.query.userId), 10) : null);
+    const targetUserId = req.user!.id;
 
-    if (!targetUserId || !channelId) {
-      res.status(400).json({ success: false, error: "userId and channelId are required" });
+    if (!channelId) {
+      res.status(400).json({ success: false, error: "channelId is required" });
       return;
     }
 
@@ -303,15 +259,9 @@ userRouter.delete("/favorites/:channelId", optionalAuth, async (req: Request, re
 /**
  * GET /api/user/notifications
  */
-userRouter.get("/notifications", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.get("/notifications", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
-    const requestedUserId = req.query.userId ? parseInt(String(req.query.userId), 10) : null;
-    const targetUserId = req.user?.id || requestedUserId;
-
-    if (!targetUserId) {
-      res.json({ success: true, notifications: [] });
-      return;
-    }
+    const targetUserId = req.user!.id;
 
     const [rows] = await pool.query<RowDataPacket[]>(
       "SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 50",
@@ -327,16 +277,12 @@ userRouter.get("/notifications", optionalAuth, async (req: Request, res: Respons
 /**
  * PATCH /api/user/notifications/:id/read
  */
-userRouter.patch("/notifications/:id/read", optionalAuth, async (req: Request, res: Response): Promise<void> => {
+userRouter.patch("/notifications/:id/read", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const notifId = parseInt(req.params.id as string, 10);
-    const targetUserId = req.user?.id;
+    const targetUserId = req.user!.id;
 
-    if (targetUserId) {
-      await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?", [notifId, targetUserId]);
-    } else {
-      await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ?", [notifId]);
-    }
+    await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?", [notifId, targetUserId]);
 
     res.json({ success: true });
   } catch (error: unknown) {

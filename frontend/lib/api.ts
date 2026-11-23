@@ -57,7 +57,19 @@ export function resolveImageUrl(path?: string | null): string {
       ? "https://hulu-market-backend.onrender.com"
       : "");
 
-  return backendHost ? `${backendHost}/${cleanPath}` : `/${cleanPath}`;
+  let url = backendHost ? `${backendHost}/${cleanPath}` : `/${cleanPath}`;
+
+  // If accessing a private upload (such as payment receipts or escrow attachments), attach token if in browser
+  if (cleanPath.includes("private") && typeof window !== "undefined") {
+    try {
+      const token = localStorage.getItem("hulu_token");
+      if (token && !url.includes("token=")) {
+        url += (url.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
+      }
+    } catch {}
+  }
+
+  return url;
 }
 
 /**
