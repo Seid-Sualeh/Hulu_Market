@@ -264,6 +264,25 @@ export async function initDatabase(): Promise<boolean> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 8. Escrow message reads — tracks last-read timestamp per user per order (for unread badge)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS escrow_order_reads (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        user_id INT NOT NULL,
+        last_read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_order_user_read (order_id, user_id),
+        INDEX idx_reads_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Migrate: add last_seen to users for online/offline indicator
+    try {
+      await conn.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT NULL`);
+    } catch {
+      /* column already exists */
+    }
+
     // Seed default admin account if not already present
     const [existingAdmins]: [any[], any] = await conn.query(
       "SELECT id FROM users WHERE role = 'admin' LIMIT 1"

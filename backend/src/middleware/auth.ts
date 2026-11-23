@@ -67,6 +67,8 @@ export async function authenticateToken(
             email: String(rows[0].email),
             role: rows[0].role === "admin" ? "admin" : "user",
           };
+          // Fire-and-forget: update last_seen for online status indicator
+          pool.query("UPDATE users SET last_seen = NOW() WHERE id = ?", [Number(rows[0].id)]).catch(() => {});
           next();
           return;
         }

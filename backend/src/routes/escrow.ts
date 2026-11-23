@@ -186,6 +186,46 @@ escrowRouter.get("/orders", authenticateToken, async (req: Request, res: Respons
 });
 
 /**
+ * GET /api/escrow/unread-count
+ * Returns count of UNREAD messages from other participants across all active escrow orders.
+ * Uses escrow_order_reads table to track last-read timestamp per user per order.
+ */
+escrowRouter.get("/unread-count", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const targetUserId = req.user!.id;
+    const isAdmin = req.user?.role === "admin";
+
+    if (isAdmin) {
+      // Admin sees count of active processing orders
+      const [rows] = await pool.query<RowDataPacket[]>(
+        "SELECT COUNT(*) AS count FROM escrow_orders WHERE status = 'processing' AND is_closed = FALSE"
+      );
+      res.json({ success: true, count: Number(rows[0]?.count) || 0 });
+      return;
+    }
+
+    // Count messages that arrived AFTER the user last read each order chat
+    // (messages from other participants only)
+    const [unreadRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(DISTINCT m.id) AS unreadCount
+       FROM escrow_messages m
+       JOIN escrow_orders o ON m.order_id = o.id
+       LEFT JOIN escrow_order_reads r ON r.order_id = m.order_id AND r.user_id = ?
+       WHERE (o.buyer_id = ? OR o.seller_id = ?)
+         AND m.sender_id != ?
+         AND o.is_closed = FALSE
+         AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)`,
+      [targetUserId, targetUserId, targetUserId, targetUserId]
+    );
+
+    const count = Number(unreadRows[0]?.unreadCount) || 0;
+    res.json({ success: true, count });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
  * GET /api/escrow/orders/:id/messages
  * Retrieves chat history for a specific escrow trade.
  * Enforces participant check: only verified buyer, seller, or admin can read messages.
@@ -223,6 +263,110 @@ escrowRouter.get("/orders/:id/messages", authenticateToken, async (req: Request,
       [orderId]
     );
     res.json({ success: true, messages });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * POST /api/escrow/orders/:id/mark-read
+ * Updates the user's last-read timestamp for an order chat (clears unread badge).
+ */
+escrowRouter.post("/orders/:id/mark-read", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orderId = parseInt(req.params.id as string, 10);
+    if (isNaN(orderId)) {
+      res.status(400).json({ success: false, error: "Invalid order ID." });
+      return;
+    }
+
+    const userId = req.user!.id;
+
+    await pool.query(
+      `INSERT INTO escrow_order_reads (order_id, user_id, last_read_at)
+       VALUES (?, ?, NOW())
+       ON DUPLICATE KEY UPDATE last_read_at = NOW()`,
+      [orderId, userId]
+    );
+
+    res.json({ success: true });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * GET /api/escrow/orders/:id/participants-status
+ * Returns online/last-seen status for buyer, seller, and admin in a specific order.
+ * Online = last_seen within last 2 minutes.
+ */
+escrowRouter.get("/orders/:id/participants-status", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orderId = parseInt(req.params.id as string, 10);
+    if (isNaN(orderId)) {
+      res.status(400).json({ success: false, error: "Invalid order ID." });
+      return;
+    }
+
+    const [orderRows] = await pool.query<RowDataPacket[]>(
+      "SELECT buyer_id, seller_id FROM escrow_orders WHERE id = ? LIMIT 1",
+      [orderId]
+    );
+
+    if (orderRows.length === 0) {
+      res.status(404).json({ success: false, error: "Escrow order not found." });
+      return;
+    }
+
+    const order = orderRows[0];
+    const currentUserId = req.user!.id;
+    const isAdmin = req.user!.role === "admin";
+
+    // Only participants can see participant status
+    if (!isAdmin && currentUserId !== Number(order.buyer_id) && currentUserId !== Number(order.seller_id)) {
+      res.status(403).json({ success: false, error: "Access denied." });
+      return;
+    }
+
+    const userIds = [order.buyer_id, order.seller_id].filter(Boolean);
+
+    // Get buyer/seller last_seen
+    const [userRows] = await pool.query<RowDataPacket[]>(
+      "SELECT id, last_seen FROM users WHERE id IN (?)",
+      [userIds.length > 0 ? userIds : [0]]
+    );
+
+    // Get admin last_seen (most recently active admin)
+    const [adminRows] = await pool.query<RowDataPacket[]>(
+      "SELECT id, last_seen FROM users WHERE role = 'admin' ORDER BY last_seen DESC LIMIT 1"
+    );
+
+    const now = Date.now();
+    const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+    function formatStatus(lastSeenVal: string | null): { isOnline: boolean; lastSeen: string | null; label: string } {
+      if (!lastSeenVal) return { isOnline: false, lastSeen: null, label: "Offline" };
+      const ts = new Date(lastSeenVal).getTime();
+      const diffMs = now - ts;
+      const isOnline = diffMs < ONLINE_THRESHOLD_MS;
+      if (isOnline) return { isOnline: true, lastSeen: lastSeenVal, label: "Online" };
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 60) return { isOnline: false, lastSeen: lastSeenVal, label: `Last seen ${diffMins}m ago` };
+      const diffHrs = Math.floor(diffMins / 60);
+      if (diffHrs < 24) return { isOnline: false, lastSeen: lastSeenVal, label: `Last seen ${diffHrs}h ago` };
+      return { isOnline: false, lastSeen: lastSeenVal, label: "Last seen a while ago" };
+    }
+
+    const buyerRow = userRows.find((r) => Number(r.id) === Number(order.buyer_id));
+    const sellerRow = userRows.find((r) => Number(r.id) === Number(order.seller_id));
+    const adminRow = adminRows[0] || null;
+
+    res.json({
+      success: true,
+      buyer: formatStatus(buyerRow?.last_seen ?? null),
+      seller: formatStatus(sellerRow?.last_seen ?? null),
+      admin: formatStatus(adminRow?.last_seen ?? null),
+    });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

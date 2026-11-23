@@ -275,6 +275,23 @@ userRouter.get("/notifications", authenticateToken, async (req: Request, res: Re
 });
 
 /**
+ * GET /api/user/notifications/unread-count
+ * Returns fast count of unread notifications for the header badge.
+ */
+userRouter.get("/notifications/unread-count", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const targetUserId = req.user!.id;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND is_read = FALSE",
+      [targetUserId]
+    );
+    res.json({ success: true, count: Number(rows[0]?.count) || 0 });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
  * PATCH /api/user/notifications/:id/read
  */
 userRouter.patch("/notifications/:id/read", authenticateToken, async (req: Request, res: Response): Promise<void> => {
@@ -285,6 +302,44 @@ userRouter.patch("/notifications/:id/read", authenticateToken, async (req: Reque
     await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?", [notifId, targetUserId]);
 
     res.json({ success: true });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * GET /api/user/admin-status
+ * Returns the online/last-seen status of the most recently active admin.
+ * Used by the Admin Support chat modal header.
+ */
+userRouter.get("/admin-status", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT last_seen FROM users WHERE role = 'admin' ORDER BY last_seen DESC LIMIT 1"
+    );
+
+    const lastSeenVal: string | null = rows[0]?.last_seen ?? null;
+    const now = Date.now();
+    const ONLINE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+    let isOnline = false;
+    let label = "Offline";
+
+    if (lastSeenVal) {
+      const ts = new Date(lastSeenVal).getTime();
+      const diffMs = now - ts;
+      isOnline = diffMs < ONLINE_THRESHOLD_MS;
+      if (isOnline) {
+        label = "Online";
+      } else {
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins < 60) label = `Last seen ${diffMins}m ago`;
+        else if (diffMins < 1440) label = `Last seen ${Math.floor(diffMins / 60)}h ago`;
+        else label = "Last seen a while ago";
+      }
+    }
+
+    res.json({ success: true, admin: { isOnline, lastSeen: lastSeenVal, label } });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

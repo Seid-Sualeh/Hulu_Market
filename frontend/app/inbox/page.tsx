@@ -73,6 +73,7 @@ export default function InboxPage() {
     { sender: "admin" | "user"; text: string; time: string }[]
   >([]);
   const [adminChatInput, setAdminChatInput] = useState("");
+  const [adminOnlineStatus, setAdminOnlineStatus] = useState<{ isOnline: boolean; label: string } | null>(null);
 
   // Escrow order chat
   const [selectedOrder, setSelectedOrder] = useState<P2POrder | null>(null);
@@ -92,6 +93,13 @@ export default function InboxPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
 
+  // Participants online status (for escrow order chat header)
+  const [participantsStatus, setParticipantsStatus] = useState<{
+    buyer: { isOnline: boolean; label: string } | null;
+    seller: { isOnline: boolean; label: string } | null;
+    admin: { isOnline: boolean; label: string } | null;
+  } | null>(null);
+
   // Init admin chat greeting
   useEffect(() => {
     const greeting = user?.name ? `Hello ${user.name}!` : "Hello!";
@@ -103,6 +111,21 @@ export default function InboxPage() {
       },
     ]);
   }, [user?.name]);
+
+  // Fetch admin online status when admin chat modal is opened
+  useEffect(() => {
+    if (!isAdminChatOpen) return;
+    const fetchAdminStatus = async () => {
+      try {
+        const res = await fetchBackend("user/admin-status");
+        const data = await res.json();
+        if (data.success) setAdminOnlineStatus(data.admin);
+      } catch {}
+    };
+    fetchAdminStatus();
+    const interval = setInterval(fetchAdminStatus, 30000);
+    return () => clearInterval(interval);
+  }, [isAdminChatOpen]);
 
   // Load escrow orders
   const loadOrders = async () => {
@@ -150,11 +173,24 @@ export default function InboxPage() {
     setSelectedOrder(order);
     setLoadingMessages(true);
     setOrderChatInput("");
+    setParticipantsStatus(null);
     try {
       const res = await fetchBackend(`escrow/orders/${order.id}/messages`);
       const data = await res.json();
       if (data.success && Array.isArray(data.messages)) {
         setOrderMessages(data.messages);
+      }
+      // Mark this order's messages as read (clears unread badge for this order)
+      fetchBackend(`escrow/orders/${order.id}/mark-read`, { method: "POST" }).catch(() => {});
+      // Fetch participant online status
+      const statusRes = await fetchBackend(`escrow/orders/${order.id}/participants-status`);
+      const statusData = await statusRes.json();
+      if (statusData.success) {
+        setParticipantsStatus({
+          buyer: statusData.buyer,
+          seller: statusData.seller,
+          admin: statusData.admin,
+        });
       }
     } catch {}
     finally { setLoadingMessages(false); }
@@ -315,13 +351,14 @@ export default function InboxPage() {
     e.preventDefault();
     if (!adminChatInput.trim()) return;
     const userMsg = adminChatInput.trim();
+    const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     setAdminMessages((prev) => [
       ...prev,
-      { sender: "user", text: userMsg, time: "Just now" },
+      { sender: "user", text: userMsg, time: now },
       {
         sender: "admin",
-        text: "Direct ticket support is currently offline for system maintenance. Please note that all active dispute mediation and live support is provided by Hulu Admin inside your specific Escrow Order chats below.",
-        time: "Notice",
+        text: "Thank you for reaching out to Hulu Market Support! For active trade disputes and secure communication, please use the Escrow Order chat below where our admin team directly supervises all transactions. We're here to help!",
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       },
     ]);
     setAdminChatInput("");
@@ -380,6 +417,22 @@ export default function InboxPage() {
 
     return () => clearInterval(interval);
   }, [selectedOrder?.id, user?.id]);
+
+  // Poll participants online status every 30 seconds while order chat is open
+  useEffect(() => {
+    if (!selectedOrder) return;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/participants-status`);
+        const data = await res.json();
+        if (data.success) {
+          setParticipantsStatus({ buyer: data.buyer, seller: data.seller, admin: data.admin });
+        }
+      } catch {}
+    };
+    const interval = setInterval(fetchStatus, 30000);
+    return () => clearInterval(interval);
+  }, [selectedOrder?.id]);
 
   // Resolve attachment URL through backend server
   const resolveUrl = (url: string | null) => {
@@ -582,7 +635,7 @@ export default function InboxPage() {
                 </button>
               </div>
 
-              {/* Status and 3-Way Participants row */}
+              {/* Status and 3-Way Participants row with real online/last-seen indicators */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] bg-[#0c1017]/80 px-4 py-2 text-[11px]">
                 <div className="flex items-center gap-1.5 text-teal-300/90 font-medium">
                   {selectedOrder.isClosed ? (
@@ -593,29 +646,42 @@ export default function InboxPage() {
                   ) : (
                     <>
                       <ShieldCheck size={13} className="text-teal-400 shrink-0" />
-                      <span>Funds held in escrow &bull; Admin supervises ownership transfer</span>
+                      <span>Funds held in escrow &bull; Admin supervises</span>
                     </>
                   )}
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Buyer pill with online dot */}
                   <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
                     selectedOrder.buyerConfirmed ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-emerald-500/10 text-emerald-400/80 border border-emerald-500/20"
-                  }`}>
-                    <span className="size-1.5 rounded-full bg-emerald-400" />
+                  }`} title={participantsStatus?.buyer?.label ?? "Buyer"}>
+                    <span className={`size-1.5 rounded-full ${participantsStatus?.buyer?.isOnline ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
                     <span>Buyer</span>
+                    {participantsStatus?.buyer && !participantsStatus.buyer.isOnline && (
+                      <span className="font-normal text-slate-500 ml-0.5">{participantsStatus.buyer.label.replace("Last seen ", "")}</span>
+                    )}
                     {selectedOrder.buyerConfirmed && <CheckCircle2 size={10} className="text-emerald-400 ml-0.5" />}
                   </div>
+                  {/* Seller pill with online dot */}
                   <div className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
                     selectedOrder.sellerConfirmed ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" : "bg-cyan-500/10 text-cyan-400/80 border border-cyan-500/20"
-                  }`}>
-                    <span className="size-1.5 rounded-full bg-cyan-400" />
+                  }`} title={participantsStatus?.seller?.label ?? "Seller"}>
+                    <span className={`size-1.5 rounded-full ${participantsStatus?.seller?.isOnline ? "bg-cyan-400 animate-pulse" : "bg-slate-500"}`} />
                     <span>Seller</span>
+                    {participantsStatus?.seller && !participantsStatus.seller.isOnline && (
+                      <span className="font-normal text-slate-500 ml-0.5">{participantsStatus.seller.label.replace("Last seen ", "")}</span>
+                    )}
                     {selectedOrder.sellerConfirmed && <CheckCircle2 size={10} className="text-cyan-400 ml-0.5" />}
                   </div>
-                  <div className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    <span className="size-1.5 rounded-full bg-amber-400" />
+                  {/* Admin pill with online dot */}
+                  <div className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                    title={participantsStatus?.admin?.label ?? "Admin"}>
+                    <span className={`size-1.5 rounded-full ${participantsStatus?.admin?.isOnline ? "bg-amber-400 animate-pulse" : "bg-slate-500"}`} />
                     <span>Admin</span>
+                    {participantsStatus?.admin && !participantsStatus.admin.isOnline && (
+                      <span className="font-normal text-slate-500 ml-0.5">{participantsStatus.admin.label.replace("Last seen ", "")}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -792,23 +858,38 @@ export default function InboxPage() {
                     );
                   }
 
-                  /* ── Other party (buyer or seller) ── */
+                  /* ── Other party: buyer on LEFT, seller on RIGHT ── */
                   const isSel = msg.sender_role === "seller";
+                  const isSellerSide = isSel; // seller messages go RIGHT
                   return (
-                    <div key={msg.id} className="flex justify-start gap-2">
-                      <div className={`size-7 shrink-0 rounded-full grid place-items-center text-[9px] font-bold uppercase ${isSel ? "bg-cyan-500/20 border border-cyan-500/30 text-cyan-400" : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-400"}`}>
-                        {msg.sender_name?.charAt(0) ?? "?"}
-                      </div>
+                    <div key={msg.id} className={`flex gap-2 ${isSellerSide ? "justify-end" : "justify-start"}`}>
+                      {/* Avatar on the left for buyer messages */}
+                      {!isSellerSide && (
+                        <div className="size-7 shrink-0 rounded-full grid place-items-center text-[9px] font-bold uppercase bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+                          {msg.sender_name?.charAt(0) ?? "?"}
+                        </div>
+                      )}
                       <div className="max-w-[78%]">
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <span className={`text-[9px] font-bold ${isSel ? "text-cyan-400" : "text-emerald-400"}`}>
-                            {msg.sender_name} <span className="font-normal text-slate-500">({msg.sender_role})</span>
-                          </span>
+                        <div className={`flex items-center gap-1.5 mb-1 ${isSellerSide ? "justify-end" : ""}`}>
+                          {!isSellerSide && (
+                            <span className="text-[9px] font-bold text-emerald-400">
+                              {msg.sender_name} <span className="font-normal text-slate-500">(buyer)</span>
+                            </span>
+                          )}
                           <span className="text-[9px] text-slate-600">
                             {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                           </span>
+                          {isSellerSide && (
+                            <span className="text-[9px] font-bold text-cyan-400">
+                              {msg.sender_name} <span className="font-normal text-slate-500">(seller)</span>
+                            </span>
+                          )}
                         </div>
-                        <div className="rounded-2xl rounded-tl-none bg-[#18212f] border border-white/[0.08] px-3 py-2 text-xs text-slate-200 leading-relaxed shadow-md">
+                        <div className={`px-3 py-2 text-xs leading-relaxed shadow-md ${
+                          isSellerSide
+                            ? "rounded-2xl rounded-tr-none bg-cyan-500/10 border border-cyan-500/20 text-cyan-100"
+                            : "rounded-2xl rounded-tl-none bg-[#18212f] border border-white/[0.08] text-slate-200"
+                        }`}>
                           {msg.message_type === "image" && msg.attachment_url ? (
                             <img src={resolveUrl(msg.attachment_url)} alt="Shared" className="max-w-full rounded-lg max-h-48 object-contain cursor-pointer border border-white/10" onClick={() => window.open(resolveUrl(msg.attachment_url), "_blank")} />
                           ) : msg.message_type === "voice" && msg.attachment_url ? (
@@ -818,6 +899,12 @@ export default function InboxPage() {
                           )}
                         </div>
                       </div>
+                      {/* Avatar on the right for seller messages */}
+                      {isSellerSide && (
+                        <div className="size-7 shrink-0 rounded-full grid place-items-center text-[9px] font-bold uppercase bg-cyan-500/20 border border-cyan-500/30 text-cyan-400">
+                          {msg.sender_name?.charAt(0) ?? "?"}
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -911,9 +998,15 @@ export default function InboxPage() {
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
                     Hulu Market Support
-                    <span className="size-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                    <span className={`size-2 rounded-full inline-block ${adminOnlineStatus?.isOnline ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
                   </h3>
-                  <p className="text-[10px] text-slate-400">Typically replies within 5 minutes</p>
+                  <p className="text-[10px] text-slate-400">
+                    {adminOnlineStatus
+                      ? adminOnlineStatus.isOnline
+                        ? "Admin is online"
+                        : adminOnlineStatus.label
+                      : "Typically replies within 5 minutes"}
+                  </p>
                 </div>
               </div>
               <button
@@ -923,11 +1016,6 @@ export default function InboxPage() {
               >
                 <X size={18} />
               </button>
-            </div>
-
-            <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-[11px] text-amber-300 flex items-center gap-2">
-              <Shield size={14} className="shrink-0 text-amber-400" />
-              <span>Direct 1-on-1 support tickets are offline. Live dispute mediation is handled inside active Escrow Trades below.</span>
             </div>
 
             <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">

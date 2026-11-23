@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ChevronDown,
   Coins,
@@ -17,6 +17,7 @@ import {
   type NavigationLink,
 } from "./navigation";
 import { useAuth } from "@/lib/auth";
+import { fetchBackend } from "@/lib/api";
 import PwaInstallButton from "../pwa/PwaInstallButton";
 
 function isCurrentPath(pathname: string, href: string) {
@@ -31,12 +32,14 @@ function NavigationLinkItem({
   onNavigate,
   isChild = false,
   signedIn = false,
+  badgeCount,
 }: {
   item: NavigationLink;
   pathname: string;
   onNavigate?: () => void;
   isChild?: boolean;
   signedIn?: boolean;
+  badgeCount?: number;
 }) {
   const Icon = item.icon;
   const isDashboard = item.label === "Dashboard" || item.href === "/dashboard";
@@ -69,7 +72,12 @@ function NavigationLinkItem({
         }
       />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {active && (
+      {badgeCount !== undefined && badgeCount > 0 && (
+        <span className="grid h-5 min-w-5 place-items-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-slate-950 shadow-sm shadow-amber-500/30">
+          {badgeCount > 99 ? "99+" : badgeCount}
+        </span>
+      )}
+      {active && (!badgeCount || badgeCount === 0) && (
         <span
           aria-hidden="true"
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.8)]"
@@ -85,12 +93,14 @@ function NavigationEntryItem({
   onNavigate,
   controlId,
   signedIn = false,
+  badgeCount,
 }: {
   item: NavigationEntry;
   pathname: string;
   onNavigate?: () => void;
   controlId: string;
   signedIn?: boolean;
+  badgeCount?: number;
 }) {
   const isAnyChildActive =
     item.type === "group" &&
@@ -108,6 +118,7 @@ function NavigationEntryItem({
         pathname={pathname}
         onNavigate={onNavigate}
         signedIn={signedIn}
+        badgeCount={badgeCount}
       />
     );
   }
@@ -269,6 +280,54 @@ export function SidebarNavigation({
   const { user, signedIn, mounted } = useAuth();
   const isAdmin = Boolean(mounted && signedIn && user?.role === "admin");
 
+  // Task 2: Live badge counts for Inbox and Notifications
+  const [inboxCount, setInboxCount] = useState<number>(0);
+  const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
+
+  useEffect(() => {
+    if (!mounted || !signedIn || !user?.id) {
+      setInboxCount(0);
+      setUnreadNotifications(0);
+      return;
+    }
+
+    const fetchBadgeCounts = async () => {
+      try {
+        // 1. Fetch inbox message / active escrow trades count
+        const inboxRes = await fetchBackend("escrow/unread-count");
+        if (inboxRes.ok) {
+          const data = await inboxRes.json();
+          if (data.success && typeof data.count === "number") {
+            setInboxCount(data.count);
+          }
+        }
+
+        // 2. Fetch unread notifications count
+        const notifRes = await fetchBackend("user/notifications/unread-count");
+        if (notifRes.ok) {
+          const data = await notifRes.json();
+          if (data.success && typeof data.count === "number") {
+            setUnreadNotifications(data.count);
+          }
+        }
+      } catch {}
+    };
+
+    fetchBadgeCounts();
+    const timer = setInterval(fetchBadgeCounts, 15000);
+    return () => clearInterval(timer);
+  }, [mounted, signedIn, user?.id]);
+
+  const getBadgeCount = (item: NavigationEntry): number | undefined => {
+    if (item.label === "Inbox" || (item.type === "link" && item.href === "/inbox")) {
+      return inboxCount;
+    }
+    if (item.label === "Notifications" || (item.type === "link" && item.href === "/notifications")) {
+      return unreadNotifications;
+    }
+    return undefined;
+  };
+
   // RBAC: In guest mode, only show Main section.
   // For Admin: remove the user Dashboard link because the dashboard for admin is Admin Control (/admin).
   // For Regular Users / Guests: hide Admin Control.
@@ -315,6 +374,7 @@ export function SidebarNavigation({
                   pathname={pathname}
                   onNavigate={onNavigate}
                   signedIn={mounted ? signedIn : false}
+                  badgeCount={getBadgeCount(item)}
                   controlId={`${idPrefix}-nav-${index}`}
                 />
               ))}
