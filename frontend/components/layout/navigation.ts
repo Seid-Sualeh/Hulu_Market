@@ -89,7 +89,7 @@ export const navigationSections: {
           {
             type: "link",
             label: "Ebooks & Digital Products",
-            href: "/ebooks-digital-products",
+            href: "/digital-products",
             icon: BookOpen,
           },
           {

@@ -42,10 +42,11 @@ export default function MarketplacePage() {
     },
     {
       title: "Ebooks & Digital Products",
-      href: "/ebooks-digital-products",
+      href: "/digital-products",
       icon: BookOpen,
-      description: "Digital downloads, software licenses, guides, and creative digital assets.",
-      count: "Upcoming listings",
+      description: "Educational documents, study notes, academic ebooks, templates, and guides.",
+      count: "Active digital catalog",
+      featured: true,
     },
     {
       title: "Educational Videos",

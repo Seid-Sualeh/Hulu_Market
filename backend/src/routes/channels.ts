@@ -15,46 +15,105 @@ export const channelsRouter = Router();
 /**
  * GET /api/channels
  * Returns public listings (social media channels and digital products).
- * Supports filtering by platform, category, listing_type, and subcategory.
+ * Strictly filters to status = 'active' so pending/rejected listings are never exposed.
+ * Supports filtering by platform, category, listing_type, subcategory, file_format, search, sort, and pagination.
  */
 channelsRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   try {
-    const platform = req.query.platform ? String(req.query.platform) : null;
-    const category = req.query.category ? String(req.query.category) : null;
-    const listingType = req.query.listing_type ? String(req.query.listing_type) : null;
-    const subcategory = req.query.subcategory ? String(req.query.subcategory) : null;
+    const platform = req.query.platform ? String(req.query.platform).trim() : null;
+    const category = req.query.category ? String(req.query.category).trim() : null;
+    const listingType = req.query.listing_type ? String(req.query.listing_type).trim() : null;
+    const subcategory = req.query.subcategory ? String(req.query.subcategory).trim() : null;
+    const fileFormat = req.query.file_format ? String(req.query.file_format).trim() : null;
+    const search = req.query.search || req.query.q ? String(req.query.search || req.query.q).trim() : null;
+    const sort = req.query.sort ? String(req.query.sort).trim() : "newest";
 
-    let query = "SELECT * FROM channels WHERE status = 'active'";
-    const params: string[] = [];
+    const page = req.query.page ? Math.max(1, parseInt(String(req.query.page), 10) || 1) : 1;
+    const limit = req.query.limit ? Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 12)) : (req.query.page ? 12 : 100);
+    const offset = (page - 1) * limit;
+
+    const conditions: string[] = ["c.status = 'active'"];
+    const params: (string | number)[] = [];
 
     if (platform && platform !== "all") {
-      query += " AND LOWER(platform) = LOWER(?)";
+      conditions.push("LOWER(c.platform) = LOWER(?)");
       params.push(platform);
     }
 
     if (category && category !== "all") {
-      query += " AND LOWER(category) = LOWER(?)";
+      conditions.push("LOWER(c.category) = LOWER(?)");
       params.push(category);
     }
 
     if (listingType && listingType !== "all") {
       if (listingType.toLowerCase() === "social-media") {
-        query += " AND (LOWER(listing_type) = 'social-media' OR listing_type IS NULL)";
+        conditions.push("(LOWER(c.listing_type) = 'social-media' OR c.listing_type IS NULL)");
       } else {
-        query += " AND LOWER(listing_type) = LOWER(?)";
+        conditions.push("LOWER(c.listing_type) = LOWER(?)");
         params.push(listingType);
       }
     }
 
     if (subcategory && subcategory !== "all") {
-      query += " AND LOWER(subcategory) = LOWER(?)";
+      conditions.push("LOWER(c.subcategory) = LOWER(?)");
       params.push(subcategory);
     }
 
-    query += " ORDER BY id DESC LIMIT 100";
+    if (fileFormat && fileFormat !== "all") {
+      conditions.push("LOWER(c.file_format) = LOWER(?)");
+      params.push(fileFormat);
+    }
 
-    const [channels] = await pool.query<RowDataPacket[]>(query, params);
-    res.json({ success: true, channels });
+    if (search) {
+      conditions.push("(LOWER(c.name) LIKE ? OR LOWER(c.description) LIKE ?)");
+      const term = `%${search.toLowerCase()}%`;
+      params.push(term, term);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // 1. Count total matching rows for pagination
+    const countSql = `SELECT COUNT(*) as total FROM channels c ${whereClause}`;
+    const [countRows] = await pool.query<RowDataPacket[]>(countSql, params);
+    const total = Number(countRows[0]?.total || 0);
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    // 2. Determine sort order
+    let orderClause = "ORDER BY c.id DESC";
+    if (sort === "price_asc") {
+      orderClause = "ORDER BY c.price ASC, c.id DESC";
+    } else if (sort === "price_desc") {
+      orderClause = "ORDER BY c.price DESC, c.id DESC";
+    } else if (sort === "oldest") {
+      orderClause = "ORDER BY c.id ASC";
+    }
+
+    // 3. Select public channels with safe public fields (excluding private moderation data)
+    const selectSql = `
+      SELECT c.id, c.seller_id, c.name, c.name as title, c.platform, c.category, c.listing_type,
+             c.subcategory, c.file_format, c.page_count, c.language, c.price, c.description,
+             c.subscribers, c.views_or_likes, c.link_url, c.status, c.created_at, c.updated_at,
+             c.screenshot_url, c.supporting_screenshots, c.seller_username,
+             u.first_name as seller_first_name, u.last_name as seller_last_name
+      FROM channels c
+      LEFT JOIN users u ON c.seller_id = u.id
+      ${whereClause}
+      ${orderClause}
+      LIMIT ? OFFSET ?
+    `;
+
+    const [channels] = await pool.query<RowDataPacket[]>(selectSql, [...params, limit, offset]);
+
+    res.json({
+      success: true,
+      channels,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }
