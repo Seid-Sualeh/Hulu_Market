@@ -58,7 +58,7 @@ export default function SocialMediaPage() {
   const loadChannels = async () => {
     setLoadingChannels(true);
     try {
-      const res = await fetchBackend("channels");
+      const res = await fetchBackend("channels?listing_type=social-media");
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
         const text = await res.text();

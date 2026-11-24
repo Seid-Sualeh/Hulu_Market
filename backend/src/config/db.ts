@@ -1,6 +1,6 @@
 import "dotenv/config";
 import mysql from "mysql2/promise";
-import type { Pool, PoolOptions } from "mysql2/promise";
+import type { Pool, PoolOptions, RowDataPacket, PoolConnection } from "mysql2/promise";
 import bcrypt from "bcryptjs";
 
 // Determine if we should connect using the Production Database URL
@@ -63,6 +63,84 @@ if (isProduction) {
 export const pool: Pool = mysql.createPool(poolConfig);
 
 /**
+ * Helper to check if a column exists in a table via information_schema.
+ * 100% compatible across all MySQL versions (5.7, 8.0, Aiven MySQL, MariaDB).
+ */
+async function checkColumnExists(
+  conn: PoolConnection,
+  tableName: string,
+  columnName: string
+): Promise<boolean> {
+  const [rows] = await conn.query<RowDataPacket[]>(
+    `SELECT COLUMN_NAME 
+     FROM information_schema.COLUMNS 
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? 
+     LIMIT 1`,
+    [tableName, columnName]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Safely adds a column to a table if it does not already exist.
+ * Avoids unsupported 'ADD COLUMN IF NOT EXISTS' syntax across MySQL variants.
+ * Handles each column individually so a failure on one does not block others.
+ */
+async function safeAddColumn(
+  conn: PoolConnection,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string
+): Promise<void> {
+  try {
+    const exists = await checkColumnExists(conn, tableName, columnName);
+    if (!exists) {
+      await conn.query(`ALTER TABLE \`${tableName}\` ADD COLUMN \`${columnName}\` ${columnDefinition}`);
+      console.log(`[Database Migration] Added column ${tableName}.${columnName}`);
+    }
+  } catch (err: unknown) {
+    const error = err as Error;
+    if ((error as any).code === "ER_DUP_FIELDNAME" || error.message?.includes("Duplicate column")) {
+      console.debug(`[Database Migration Note] Column ${tableName}.${columnName} already present.`);
+    } else {
+      console.error(`[Database Migration Error] Failed to add column ${tableName}.${columnName}:`, error.message);
+    }
+  }
+}
+
+/**
+ * Safely modifies a column definition if needed (e.g. widening an ENUM to VARCHAR).
+ */
+async function safeModifyColumn(
+  conn: PoolConnection,
+  tableName: string,
+  columnName: string,
+  modifyClause: string,
+  conditionFn?: (colInfo: { DATA_TYPE?: string; COLUMN_TYPE?: string; IS_NULLABLE?: string }) => boolean
+): Promise<void> {
+  try {
+    const [rows] = await conn.query<RowDataPacket[]>(
+      `SELECT DATA_TYPE, COLUMN_TYPE, IS_NULLABLE 
+       FROM information_schema.COLUMNS 
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? 
+       LIMIT 1`,
+      [tableName, columnName]
+    );
+
+    if (rows.length > 0) {
+      const colInfo = rows[0] as { DATA_TYPE?: string; COLUMN_TYPE?: string; IS_NULLABLE?: string };
+      const shouldModify = conditionFn ? conditionFn(colInfo) : true;
+      if (shouldModify) {
+        await conn.query(`ALTER TABLE \`${tableName}\` MODIFY COLUMN \`${columnName}\` ${modifyClause}`);
+        console.log(`[Database Migration] Modified column ${tableName}.${columnName} (${modifyClause})`);
+      }
+    }
+  } catch (err: unknown) {
+    console.error(`[Database Migration Error] Failed to modify column ${tableName}.${columnName}:`, (err as Error).message);
+  }
+}
+
+/**
  * Initializes the MySQL database and ensures all core tables exist.
  */
 export async function initDatabase(): Promise<boolean> {
@@ -108,14 +186,20 @@ export async function initDatabase(): Promise<boolean> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    // 2. Channel Listings table
+    // 2. Channel Listings table (Supports Social Media & Digital Products)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS channels (
         id INT AUTO_INCREMENT PRIMARY KEY,
         seller_id INT,
         name VARCHAR(255) NOT NULL,
-        platform ENUM('YouTube', 'Instagram', 'TikTok', 'Telegram', 'Facebook') NOT NULL,
+        platform VARCHAR(100) NULL DEFAULT NULL,
         category VARCHAR(100) NOT NULL,
+        listing_type VARCHAR(50) NOT NULL DEFAULT 'social-media',
+        subcategory VARCHAR(100) NULL DEFAULT NULL,
+        file_format VARCHAR(50) NULL DEFAULT NULL,
+        page_count INT NULL DEFAULT NULL,
+        language VARCHAR(50) NULL DEFAULT NULL,
+        digital_metadata TEXT NULL DEFAULT NULL,
         subscribers VARCHAR(50) NOT NULL DEFAULT '0',
         views_or_likes VARCHAR(50) NOT NULL DEFAULT '0',
         price DECIMAL(15, 2) NOT NULL,
@@ -130,21 +214,34 @@ export async function initDatabase(): Promise<boolean> {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_channels_platform (platform),
-        INDEX idx_channels_status (status)
+        INDEX idx_channels_status (status),
+        INDEX idx_channels_listing_type (listing_type),
+        INDEX idx_channels_subcategory (subcategory)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    // Migrate channels columns if table already existed
-    try {
-      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS screenshot_url VARCHAR(500) NULL`);
-      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS supporting_screenshots TEXT NULL`);
-      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS description TEXT NULL`);
-      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS seller_username VARCHAR(150) NULL`);
-      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS seller_phone VARCHAR(50) NULL`);
-      await conn.query(`ALTER TABLE channels ADD COLUMN IF NOT EXISTS rejection_reason TEXT NULL`);
-    } catch {
-      /* columns already exist */
-    }
+    // Migrate channels columns if table already existed (safe, repeatable & compatible)
+    await safeAddColumn(conn, "channels", "screenshot_url", "VARCHAR(500) NULL");
+    await safeAddColumn(conn, "channels", "supporting_screenshots", "TEXT NULL");
+    await safeAddColumn(conn, "channels", "description", "TEXT NULL");
+    await safeAddColumn(conn, "channels", "seller_username", "VARCHAR(150) NULL");
+    await safeAddColumn(conn, "channels", "seller_phone", "VARCHAR(50) NULL");
+    await safeAddColumn(conn, "channels", "rejection_reason", "TEXT NULL");
+    
+    // Foundational digital product columns
+    await safeModifyColumn(
+      conn,
+      "channels",
+      "platform",
+      "VARCHAR(100) NULL DEFAULT NULL",
+      (col) => col.DATA_TYPE?.toLowerCase() === "enum" || col.IS_NULLABLE === "NO"
+    );
+    await safeAddColumn(conn, "channels", "listing_type", "VARCHAR(50) NOT NULL DEFAULT 'social-media'");
+    await safeAddColumn(conn, "channels", "subcategory", "VARCHAR(100) NULL DEFAULT NULL");
+    await safeAddColumn(conn, "channels", "file_format", "VARCHAR(50) NULL DEFAULT NULL");
+    await safeAddColumn(conn, "channels", "page_count", "INT NULL DEFAULT NULL");
+    await safeAddColumn(conn, "channels", "language", "VARCHAR(50) NULL DEFAULT NULL");
+    await safeAddColumn(conn, "channels", "digital_metadata", "TEXT NULL DEFAULT NULL");
 
     // 3. Transactions & Escrow table
     await conn.query(`
@@ -168,11 +265,7 @@ export async function initDatabase(): Promise<boolean> {
     `);
 
     // Migrate: add screenshot_url if table already existed without it
-    try {
-      await conn.query(`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS screenshot_url VARCHAR(500) NULL`);
-    } catch {
-      /* column already exists */
-    }
+    await safeAddColumn(conn, "transactions", "screenshot_url", "VARCHAR(500) NULL");
 
     // 4. Escrow P2P Orders table
     await conn.query(`
@@ -201,15 +294,11 @@ export async function initDatabase(): Promise<boolean> {
     `);
 
     // Migrate: add new columns if table already existed
-    try {
-      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS buyer_confirmed BOOLEAN NOT NULL DEFAULT FALSE`);
-      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS seller_confirmed BOOLEAN NOT NULL DEFAULT FALSE`);
-      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS buyer_confirmation_requested BOOLEAN NOT NULL DEFAULT FALSE`);
-      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS is_closed BOOLEAN NOT NULL DEFAULT FALSE`);
-      await conn.query(`ALTER TABLE escrow_orders ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP NULL`);
-    } catch {
-      /* columns already exist */
-    }
+    await safeAddColumn(conn, "escrow_orders", "buyer_confirmed", "BOOLEAN NOT NULL DEFAULT FALSE");
+    await safeAddColumn(conn, "escrow_orders", "seller_confirmed", "BOOLEAN NOT NULL DEFAULT FALSE");
+    await safeAddColumn(conn, "escrow_orders", "buyer_confirmation_requested", "BOOLEAN NOT NULL DEFAULT FALSE");
+    await safeAddColumn(conn, "escrow_orders", "is_closed", "BOOLEAN NOT NULL DEFAULT FALSE");
+    await safeAddColumn(conn, "escrow_orders", "closed_at", "TIMESTAMP NULL");
 
     // 5. Escrow Chat Messages (Supervised by Admin, Seller, and Buyer)
     await conn.query(`
@@ -228,12 +317,8 @@ export async function initDatabase(): Promise<boolean> {
     `);
 
     // Migrate: add new columns if table already existed
-    try {
-      await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS message_type ENUM('text','voice','image') NOT NULL DEFAULT 'text'`);
-      await conn.query(`ALTER TABLE escrow_messages ADD COLUMN IF NOT EXISTS attachment_url VARCHAR(500) NULL`);
-    } catch {
-      /* columns already exist */
-    }
+    await safeAddColumn(conn, "escrow_messages", "message_type", "ENUM('text','voice','image') NOT NULL DEFAULT 'text'");
+    await safeAddColumn(conn, "escrow_messages", "attachment_url", "VARCHAR(500) NULL");
 
     // 6. User Notifications table
     await conn.query(`
@@ -277,11 +362,7 @@ export async function initDatabase(): Promise<boolean> {
     `);
 
     // Migrate: add last_seen to users for online/offline indicator
-    try {
-      await conn.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP NULL DEFAULT NULL`);
-    } catch {
-      /* column already exists */
-    }
+    await safeAddColumn(conn, "users", "last_seen", "TIMESTAMP NULL DEFAULT NULL");
 
     // Seed default admin account if not already present
     const [existingAdmins]: [any[], any] = await conn.query(

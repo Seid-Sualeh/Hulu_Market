@@ -48,6 +48,28 @@ export type SocialPlatform =
   | "telegram"
   | "facebook";
 
+const DEFAULT_DIGITAL_SUBCATEGORIES = [
+  "Ebooks",
+  "Study Notes",
+  "Educational Documents",
+  "Templates",
+  "Guides",
+  "Other Digital Products",
+];
+
+const DEFAULT_DIGITAL_FILE_FORMATS = [
+  "PDF",
+  "DOC",
+  "DOCX",
+  "PPT",
+  "PPTX",
+  "ZIP",
+  "EPUB",
+  "TXT",
+  "XLS",
+  "XLSX",
+];
+
 function SellPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -71,6 +93,26 @@ function SellPageInner() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [price, setPrice] = useState("");
   const [agreed, setAgreed] = useState(false);
+
+  // Form states for Digital Products
+  const [digitalSubcategories, setDigitalSubcategories] = useState<string[]>(
+    DEFAULT_DIGITAL_SUBCATEGORIES
+  );
+  const [digitalFileFormats, setDigitalFileFormats] = useState<string[]>(
+    DEFAULT_DIGITAL_FILE_FORMATS
+  );
+  const [digitalTitle, setDigitalTitle] = useState("");
+  const [digitalDescription, setDigitalDescription] = useState("");
+  const [digitalSubcategory, setDigitalSubcategory] = useState("Ebooks");
+  const [digitalFileFormat, setDigitalFileFormat] = useState("PDF");
+  const [digitalPrice, setDigitalPrice] = useState("");
+  const [digitalPageCount, setDigitalPageCount] = useState("");
+  const [digitalLanguage, setDigitalLanguage] = useState("");
+  const [digitalAgreed, setDigitalAgreed] = useState(false);
+  const [digitalFieldErrors, setDigitalFieldErrors] = useState<
+    Record<string, string>
+  >({});
+  const [isSubmittingDigital, setIsSubmittingDigital] = useState(false);
 
   // Screenshots
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
@@ -136,6 +178,34 @@ function SellPageInner() {
       })
       .catch(() => {});
   }, [editChannelId]);
+
+  // Fetch available digital subcategories and formats from backend categories API
+  useEffect(() => {
+    fetchBackend("channels/categories")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.categories)) {
+          const digitalCat = data.categories.find(
+            (c: { id?: string }) => c.id === "ebooks-digital"
+          );
+          if (digitalCat) {
+            if (Array.isArray(digitalCat.subcategories) && digitalCat.subcategories.length > 0) {
+              setDigitalSubcategories(digitalCat.subcategories);
+              setDigitalSubcategory((prev) =>
+                digitalCat.subcategories.includes(prev) ? prev : digitalCat.subcategories[0]
+              );
+            }
+            if (Array.isArray(digitalCat.fileFormats) && digitalCat.fileFormats.length > 0) {
+              setDigitalFileFormats(digitalCat.fileFormats);
+              setDigitalFileFormat((prev) =>
+                digitalCat.fileFormats.includes(prev) ? prev : digitalCat.fileFormats[0]
+              );
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const marketplaceItems: {
     id: MarketplaceCategory;
@@ -386,6 +456,120 @@ function SellPageInner() {
     }
   };
 
+  const validateDigitalForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    const trimmedTitle = digitalTitle.trim();
+    if (!trimmedTitle) {
+      errors.title = "Product title is required.";
+    } else if (trimmedTitle.length < 2) {
+      errors.title = "Product title must be at least 2 characters.";
+    } else if (trimmedTitle.length > 255) {
+      errors.title = "Product title must not exceed 255 characters.";
+    }
+
+    const trimmedDesc = digitalDescription.trim();
+    if (!trimmedDesc) {
+      errors.description = "Product description is required.";
+    } else if (trimmedDesc.length > 5000) {
+      errors.description = "Description must not exceed 5,000 characters.";
+    }
+
+    if (!digitalSubcategory.trim()) {
+      errors.subcategory = "Please select a digital product subcategory.";
+    } else if (
+      !digitalSubcategories.some(
+        (s) => s.toLowerCase() === digitalSubcategory.trim().toLowerCase()
+      )
+    ) {
+      errors.subcategory = `Invalid subcategory. Must be one of: ${digitalSubcategories.join(", ")}`;
+    }
+
+    if (!digitalFileFormat.trim()) {
+      errors.fileFormat = "Please select a file format.";
+    } else if (
+      !digitalFileFormats.some(
+        (f) => f.toUpperCase() === digitalFileFormat.trim().toUpperCase()
+      )
+    ) {
+      errors.fileFormat = `Invalid format. Must be one of: ${digitalFileFormats.join(", ")}`;
+    }
+
+    const priceNum = Number(digitalPrice);
+    if (!digitalPrice || isNaN(priceNum) || priceNum <= 0) {
+      errors.price = "A valid selling price greater than 0 ETB is required.";
+    }
+
+    if (digitalPageCount.trim()) {
+      const pageNum = Number(digitalPageCount);
+      if (!Number.isInteger(pageNum) || pageNum <= 0) {
+        errors.pageCount = "Page count must be a positive whole number.";
+      } else if (pageNum > 100000) {
+        errors.pageCount = "Page count cannot exceed 100,000.";
+      }
+    }
+
+    if (digitalLanguage.trim().length > 50) {
+      errors.language = "Language must not exceed 50 characters.";
+    }
+
+    if (!digitalAgreed) {
+      errors.agreed = "You must confirm the ownership and authorization declaration to submit.";
+    }
+
+    setDigitalFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleDigitalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitError(null);
+
+    if (!validateDigitalForm()) {
+      return;
+    }
+
+    setIsSubmittingDigital(true);
+    try {
+      const payload = {
+        listing_type: "ebooks-digital",
+        category: "Ebooks & Digital Products",
+        name: digitalTitle.trim(),
+        description: digitalDescription.trim(),
+        subcategory: digitalSubcategory,
+        file_format: digitalFileFormat.toUpperCase(),
+        price: Number(digitalPrice),
+        page_count: digitalPageCount.trim() ? Number(digitalPageCount) : null,
+        language: digitalLanguage.trim() || null,
+        agreed_declaration: true,
+        seller_username: sellerUsername.trim() || undefined,
+        seller_phone: phoneNumber.trim() || undefined,
+      };
+
+      const res = await fetchBackend("channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setSubmittedChannelName(digitalTitle.trim());
+        setSubmitted(true);
+      } else {
+        if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+          setSubmitError(data.errors.join(" "));
+        } else {
+          setSubmitError(data.error || "Failed to submit digital product listing.");
+        }
+      }
+    } catch {
+      setSubmitError("Network error. Please check your connection and try again.");
+    } finally {
+      setIsSubmittingDigital(false);
+    }
+  };
+
   if (!mounted) {
     return <div className="min-h-screen bg-[#0b0f17]" />;
   }
@@ -494,9 +678,9 @@ function SellPageInner() {
               Listing Submitted for Administrator Review!
             </h3>
             <p className="mt-2 text-xs text-slate-300 max-w-lg mx-auto leading-relaxed">
-              Your channel <span className="font-bold text-amber-400">"{submittedChannelName}"</span> has been submitted.
-              Our review officers will examine your channel dashboard screenshot, link, and statistics.
-              Once approved, your channel will be published in the public marketplace.
+              Your listing <span className="font-bold text-amber-400">"{submittedChannelName}"</span> has been submitted.
+              Our review officers will examine your listing details and verification data.
+              Once approved, your listing will be published in the public marketplace.
             </p>
           </div>
 
@@ -518,10 +702,17 @@ function SellPageInner() {
                 setScreenshotFile(null);
                 setPreviewImage(null);
                 setAgreed(false);
+                setDigitalTitle("");
+                setDigitalDescription("");
+                setDigitalPrice("");
+                setDigitalPageCount("");
+                setDigitalLanguage("");
+                setDigitalAgreed(false);
+                setDigitalFieldErrors({});
               }}
               className="rounded-xl border border-white/10 px-5 py-2.5 text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/5 transition"
             >
-              Submit Another Channel
+              Submit Another Listing
             </button>
           </div>
         </div>
@@ -963,8 +1154,355 @@ function SellPageInner() {
         </form>
       )}
 
+      {/* DIGITAL PRODUCTS SELL FORM */}
+      {!submitted && selectedMarketplace === "ebooks-digital" && (
+        <form onSubmit={handleDigitalSubmit} className="space-y-6">
+          <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-6">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+              <div className="flex items-center gap-3">
+                <div className="grid size-9 place-items-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <BookOpen size={18} />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-white">
+                    Ebooks & Digital Products Listing Information
+                  </h2>
+                  <p className="text-[11px] text-slate-400">
+                    Provide metadata, format, description, and price for your digital product
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-amber-400">
+                STEP 02
+              </span>
+            </div>
+
+            {/* 1. Product Title */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300">
+                  Product Title <span className="text-amber-400">*</span>
+                </label>
+                <span className="text-[10px] text-slate-500">{digitalTitle.length}/255</span>
+              </div>
+              <input
+                type="text"
+                required
+                maxLength={255}
+                value={digitalTitle}
+                onChange={(e) => {
+                  setDigitalTitle(e.target.value);
+                  if (digitalFieldErrors.title) {
+                    setDigitalFieldErrors((prev) => ({ ...prev, title: "" }));
+                  }
+                }}
+                placeholder="e.g. Masterclass in Algorithmic Trading & Risk Strategies (2025 Edition)"
+                className={`w-full rounded-xl border bg-[#0c1017] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition ${
+                  digitalFieldErrors.title
+                    ? "border-rose-500/80 focus:border-rose-500"
+                    : "border-white/[0.08] focus:border-amber-400"
+                }`}
+              />
+              {digitalFieldErrors.title ? (
+                <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                  <AlertCircle size={12} /> {digitalFieldErrors.title}
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  A clear, descriptive title between 2 and 255 characters.
+                </p>
+              )}
+            </div>
+
+            {/* 2. Subcategory & File Format */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Subcategory */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Digital Subcategory <span className="text-amber-400">*</span>
+                </label>
+                <select
+                  value={digitalSubcategory}
+                  onChange={(e) => {
+                    setDigitalSubcategory(e.target.value);
+                    if (digitalFieldErrors.subcategory) {
+                      setDigitalFieldErrors((prev) => ({ ...prev, subcategory: "" }));
+                    }
+                  }}
+                  className={`w-full rounded-xl border bg-[#0c1017] px-3.5 py-2.5 text-xs text-white focus:outline-none transition ${
+                    digitalFieldErrors.subcategory
+                      ? "border-rose-500/80 focus:border-rose-500"
+                      : "border-white/[0.08] focus:border-amber-400"
+                  }`}
+                >
+                  {digitalSubcategories.map((sub) => (
+                    <option key={sub} value={sub} className="bg-[#111722] text-white">
+                      {sub}
+                    </option>
+                  ))}
+                </select>
+                {digitalFieldErrors.subcategory && (
+                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle size={12} /> {digitalFieldErrors.subcategory}
+                  </p>
+                )}
+              </div>
+
+              {/* File Format */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  File Format <span className="text-amber-400">*</span>
+                </label>
+                <select
+                  value={digitalFileFormat}
+                  onChange={(e) => {
+                    setDigitalFileFormat(e.target.value);
+                    if (digitalFieldErrors.fileFormat) {
+                      setDigitalFieldErrors((prev) => ({ ...prev, fileFormat: "" }));
+                    }
+                  }}
+                  className={`w-full rounded-xl border bg-[#0c1017] px-3.5 py-2.5 text-xs text-white focus:outline-none transition ${
+                    digitalFieldErrors.fileFormat
+                      ? "border-rose-500/80 focus:border-rose-500"
+                      : "border-white/[0.08] focus:border-amber-400"
+                  }`}
+                >
+                  {digitalFileFormats.map((fmt) => (
+                    <option key={fmt} value={fmt} className="bg-[#111722] text-white">
+                      {fmt}
+                    </option>
+                  ))}
+                </select>
+                {digitalFieldErrors.fileFormat && (
+                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle size={12} /> {digitalFieldErrors.fileFormat}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Product Description */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300">
+                  Product Description <span className="text-amber-400">*</span>
+                </label>
+                <span className="text-[10px] text-slate-500">{digitalDescription.length}/5000</span>
+              </div>
+              <textarea
+                required
+                rows={4}
+                maxLength={5000}
+                value={digitalDescription}
+                onChange={(e) => {
+                  setDigitalDescription(e.target.value);
+                  if (digitalFieldErrors.description) {
+                    setDigitalFieldErrors((prev) => ({ ...prev, description: "" }));
+                  }
+                }}
+                placeholder="Detail what is included in this digital product, chapter summary or contents, table of contents, edition, and target audience..."
+                className={`w-full rounded-xl border bg-[#0c1017] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition ${
+                  digitalFieldErrors.description
+                    ? "border-rose-500/80 focus:border-rose-500"
+                    : "border-white/[0.08] focus:border-amber-400"
+                }`}
+              />
+              {digitalFieldErrors.description ? (
+                <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                  <AlertCircle size={12} /> {digitalFieldErrors.description}
+                </p>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  A comprehensive description helps buyers understand the scope and value before purchasing.
+                </p>
+              )}
+            </div>
+
+            {/* 4. Optional Fields: Page Count & Language */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Page Count <span className="text-slate-500 text-[11px]">(Optional)</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100000}
+                  step={1}
+                  value={digitalPageCount}
+                  onChange={(e) => {
+                    setDigitalPageCount(e.target.value);
+                    if (digitalFieldErrors.pageCount) {
+                      setDigitalFieldErrors((prev) => ({ ...prev, pageCount: "" }));
+                    }
+                  }}
+                  placeholder="e.g. 240"
+                  className={`w-full rounded-xl border bg-[#0c1017] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition ${
+                    digitalFieldErrors.pageCount
+                      ? "border-rose-500/80 focus:border-rose-500"
+                      : "border-white/[0.08] focus:border-amber-400"
+                  }`}
+                />
+                {digitalFieldErrors.pageCount ? (
+                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle size={12} /> {digitalFieldErrors.pageCount}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Applicable for books, documents, slides, and exam study notes.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Language <span className="text-slate-500 text-[11px]">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={50}
+                  value={digitalLanguage}
+                  onChange={(e) => {
+                    setDigitalLanguage(e.target.value);
+                    if (digitalFieldErrors.language) {
+                      setDigitalFieldErrors((prev) => ({ ...prev, language: "" }));
+                    }
+                  }}
+                  placeholder="e.g. English, Amharic, Oromo, French"
+                  className={`w-full rounded-xl border bg-[#0c1017] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition ${
+                    digitalFieldErrors.language
+                      ? "border-rose-500/80 focus:border-rose-500"
+                      : "border-white/[0.08] focus:border-amber-400"
+                  }`}
+                />
+                {digitalFieldErrors.language ? (
+                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle size={12} /> {digitalFieldErrors.language}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Primary language of the document or material.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* 5. Selling Price & Seller Contact */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Selling Price in ETB <span className="text-amber-400">*</span>
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  step="any"
+                  value={digitalPrice}
+                  onChange={(e) => {
+                    setDigitalPrice(e.target.value);
+                    if (digitalFieldErrors.price) {
+                      setDigitalFieldErrors((prev) => ({ ...prev, price: "" }));
+                    }
+                  }}
+                  placeholder="e.g. 450"
+                  className={`w-full rounded-xl border bg-[#0c1017] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition ${
+                    digitalFieldErrors.price
+                      ? "border-rose-500/80 focus:border-rose-500"
+                      : "border-white/[0.08] focus:border-amber-400"
+                  }`}
+                />
+                {digitalFieldErrors.price ? (
+                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle size={12} /> {digitalFieldErrors.price}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Payment is protected by Hulu Escrow until order completion.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-300">
+                  Seller Contact Phone <span className="text-slate-500 text-[11px]">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+251 9..."
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Used by Hulu Escrow officers to contact you regarding purchases.
+                </p>
+              </div>
+            </div>
+
+            {/* 6. Mandatory Seller Declaration */}
+            <div
+              className={`flex items-start gap-3 rounded-xl bg-[#0c1017] border p-4 transition ${
+                digitalFieldErrors.agreed ? "border-rose-500/70" : "border-amber-500/30"
+              }`}
+            >
+              <input
+                type="checkbox"
+                id="digital_declaration"
+                checked={digitalAgreed}
+                onChange={(e) => {
+                  setDigitalAgreed(e.target.checked);
+                  if (digitalFieldErrors.agreed) {
+                    setDigitalFieldErrors((prev) => ({ ...prev, agreed: "" }));
+                  }
+                }}
+                className="mt-1 size-4 rounded border-slate-700 bg-[#070b10] text-amber-500 focus:ring-amber-400"
+              />
+              <div className="flex-1">
+                <label
+                  htmlFor="digital_declaration"
+                  className="cursor-pointer text-xs leading-relaxed text-slate-200 select-none"
+                >
+                  <span className="font-semibold text-amber-300">
+                    Mandatory Seller Declaration:
+                  </span>{" "}
+                  I confirm and declare that I am the author, copyright owner, or legally authorized distributor of this digital work. I confirm this item does not violate copyright, intellectual property rights, or pirated distribution laws.
+                </label>
+                {digitalFieldErrors.agreed && (
+                  <p className="mt-1.5 text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle size={12} /> {digitalFieldErrors.agreed}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* 7. Submit Action Button */}
+            <button
+              type="submit"
+              disabled={isSubmittingDigital}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 py-3.5 text-xs font-bold text-slate-950 hover:from-amber-400 hover:to-amber-500 disabled:opacity-40 shadow-lg shadow-amber-950/20 transition"
+            >
+              {isSubmittingDigital ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Submitting Digital Product Listing...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={18} />
+                  <span>Submit Digital Product for Review</span>
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      )}
+
       {/* OTHER CATEGORIES FALLBACK FORM */}
-      {!submitted && selectedMarketplace !== "social-media" && (
+      {!submitted &&
+        selectedMarketplace !== "social-media" &&
+        selectedMarketplace !== "ebooks-digital" && (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-6">
             <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
