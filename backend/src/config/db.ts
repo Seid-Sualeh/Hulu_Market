@@ -384,8 +384,50 @@ export async function initDatabase(): Promise<boolean> {
         status ENUM('pending', 'uploaded', 'failed') NOT NULL DEFAULT 'uploaded',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_dpf_listing (listing_id),
         INDEX idx_dpf_listing (listing_id),
         INDEX idx_dpf_seller (seller_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // Migration: Safe addition of UNIQUE KEY uq_dpf_listing on digital_product_files if missing
+    try {
+      const [indexes]: [RowDataPacket[], unknown] = await conn.query(
+        "SHOW INDEX FROM digital_product_files WHERE Key_name = 'uq_dpf_listing'"
+      );
+      if (indexes.length === 0) {
+        const [dups]: [RowDataPacket[], unknown] = await conn.query(
+          "SELECT listing_id, COUNT(*) as cnt FROM digital_product_files GROUP BY listing_id HAVING cnt > 1"
+        );
+        if (dups.length > 0) {
+          const dupIds = dups.map((d: any) => d.listing_id);
+          console.error(
+            `[DB Migration Warning] Found ${dups.length} duplicate listing_id(s) in digital_product_files: ${dupIds.join(
+              ", "
+            )}. Unique constraint uq_dpf_listing deferred until duplicates are resolved manually.`
+          );
+        } else {
+          await conn.query("ALTER TABLE digital_product_files ADD UNIQUE KEY uq_dpf_listing (listing_id)");
+          console.log("[DB Migration] Successfully added UNIQUE KEY uq_dpf_listing on digital_product_files.");
+        }
+      }
+    } catch (migErr: any) {
+      console.warn("[DB Migration] Note on uq_dpf_listing:", migErr.message);
+    }
+
+    // 10. Failed Storage Cleanups (Reconciliation queue for deleted listings / orphaned files)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS failed_storage_cleanups (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        storage_key VARCHAR(255) NOT NULL,
+        listing_id INT NULL,
+        reason VARCHAR(255) NULL,
+        status ENUM('pending', 'resolved', 'failed') NOT NULL DEFAULT 'pending',
+        retry_count INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_fsc_status (status),
+        INDEX idx_fsc_key (storage_key)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 

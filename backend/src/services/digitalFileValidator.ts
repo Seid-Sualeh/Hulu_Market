@@ -33,55 +33,207 @@ export function getMaxFileSizeLimit(): number {
 }
 
 /**
- * Inspects ZIP header and scans the first few directory entries for path traversal or malicious markers.
+ * Robust ZIP archive inspector validating:
+ * - End of Central Directory (EOCD) record (PK\x05\x06)
+ * - Central Directory entries (PK\x01\x02) across all entries (unbounded by previous 50 limit, capped at 5,000)
+ * - Local file headers (PK\x03\x04)
+ * - Path traversal (..), absolute paths (/ or \ or C:), and null bytes
+ * - Total uncompressed size (< 500 MB) and extreme decompression ratios (> 100:1)
+ * - ZIP64 structures
+ * Performs pure binary validation without extracting any archive content to disk.
  */
 function inspectZipStructure(buffer: Buffer): { valid: boolean; error?: string } {
-  // Must start with PK\x03\x04
-  if (buffer.length < 30) {
-    return { valid: false, error: "Malformed archive: header is incomplete." };
+  const minZipSize = 22; // Minimal valid ZIP: empty EOCD record
+  if (buffer.length < minZipSize) {
+    return { valid: false, error: "Malformed archive: file is too small to be a valid ZIP archive." };
   }
 
-  // Iterate over local file headers to verify structure and check for Zip Slip (directory traversal)
-  let offset = 0;
+  // 1. Locate End of Central Directory Record (EOCD signature: 0x06054b50, PK\x05\x06)
+  // EOCD is 22 bytes + optional comment up to 65,535 bytes
+  let eocdOffset = -1;
+  const maxSearchLength = Math.min(buffer.length - 22, 65535 + 22);
+  const searchStart = buffer.length - 22;
+  const searchEnd = buffer.length - maxSearchLength;
+
+  for (let i = searchStart; i >= searchEnd; i--) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) {
+      eocdOffset = i;
+      break;
+    }
+  }
+
+  if (eocdOffset === -1) {
+    return {
+      valid: false,
+      error: "Malformed archive: End of Central Directory (EOCD) record not found.",
+    };
+  }
+
+  const commentLength = buffer.readUInt16LE(eocdOffset + 20);
+  if (eocdOffset + 22 + commentLength > buffer.length) {
+    return { valid: false, error: "Malformed archive: corrupted comment length in EOCD record." };
+  }
+
+  const diskNumber = buffer.readUInt16LE(eocdOffset + 4);
+  const cdStartDisk = buffer.readUInt16LE(eocdOffset + 6);
+  if (diskNumber !== 0 || cdStartDisk !== 0) {
+    return { valid: false, error: "Security restriction: multi-disk spanned ZIP archives are not supported." };
+  }
+
+  const totalEntriesOnDisk = buffer.readUInt16LE(eocdOffset + 8);
+  const totalEntries = buffer.readUInt16LE(eocdOffset + 10);
+  const cdSizeBytes = buffer.readUInt32LE(eocdOffset + 12);
+  const cdOffset = buffer.readUInt32LE(eocdOffset + 16);
+
+  // Check for ZIP64 indicator values
+  const isZip64 =
+    totalEntries === 0xffff ||
+    cdSizeBytes === 0xffffffff ||
+    cdOffset === 0xffffffff ||
+    totalEntriesOnDisk === 0xffff;
+
+  if (isZip64) {
+    // Check for ZIP64 Locator signature (0x07064b50, PK\x06\x07)
+    const locatorOffset = eocdOffset - 20;
+    if (locatorOffset < 0 || buffer.readUInt32LE(locatorOffset) !== 0x07064b50) {
+      return {
+        valid: false,
+        error: "Malformed archive: ZIP64 indicator detected without valid ZIP64 locator structure.",
+      };
+    }
+    // Hulu Market enforces a 50 MB - 200 MB maximum upload size; standard ZIP64 archives exceeding these bounds are rejected
+    return {
+      valid: false,
+      error: "Security restriction: ZIP64 format archives exceeding 32-bit limits are not supported.",
+    };
+  }
+
+  // Enforce reasonable entry bounds
+  const MAX_ENTRIES_LIMIT = 5000;
+  if (totalEntries > MAX_ENTRIES_LIMIT) {
+    return {
+      valid: false,
+      error: `Security violation: archive contains excessive entries (${totalEntries} > ${MAX_ENTRIES_LIMIT}).`,
+    };
+  }
+
+  if (cdOffset + cdSizeBytes > buffer.length) {
+    return {
+      valid: false,
+      error: "Malformed archive: Central Directory bounds extend beyond archive file size.",
+    };
+  }
+
+  // 2. Iterate and inspect every Central Directory record (signature: 0x02014b50, PK\x01\x02)
+  let cdCursor = cdOffset;
   let entriesInspected = 0;
-  const maxEntriesToScan = 50; // Resource limit to prevent ReDoS/infinite loop
+  let totalUncompressedSize = 0;
+  const MAX_TOTAL_UNCOMPRESSED_BYTES = 500 * 1024 * 1024; // 500 MB uncompressed limit
 
-  while (offset + 30 <= buffer.length && entriesInspected < maxEntriesToScan) {
-    // Check local file header signature 0x04034b50 (little endian PK\x03\x04)
-    if (buffer.readUInt32LE(offset) !== 0x04034b50) {
-      break; // Reached end of local headers or central directory
+  while (cdCursor < cdOffset + cdSizeBytes && entriesInspected < totalEntries) {
+    if (cdCursor + 46 > buffer.length) {
+      return { valid: false, error: "Malformed archive: truncated Central Directory header." };
     }
 
-    const filenameLength = buffer.readUInt16LE(offset + 26);
-    const extraFieldLength = buffer.readUInt16LE(offset + 28);
-    const compressedSize = buffer.readUInt32LE(offset + 18);
-    const uncompressedSize = buffer.readUInt32LE(offset + 22);
-
-    if (offset + 30 + filenameLength > buffer.length) {
-      return { valid: false, error: "Malformed archive: truncated entry header." };
-    }
-
-    const filename = buffer.toString("utf8", offset + 30, offset + 30 + filenameLength);
-
-    // Zip Slip / Directory Traversal Detection
-    if (filename.includes("..") || filename.startsWith("/") || filename.startsWith("\\")) {
+    if (buffer.readUInt32LE(cdCursor) !== 0x02014b50) {
       return {
         valid: false,
-        error: "Security violation: archive contains dangerous directory traversal path.",
+        error: `Malformed archive: invalid signature in Central Directory entry #${entriesInspected + 1}.`,
       };
     }
 
-    // Compression bomb sanity check (extreme expansion ratio)
-    if (compressedSize > 0 && uncompressedSize / compressedSize > 100 && uncompressedSize > 100 * 1024 * 1024) {
+    const compressedSize = buffer.readUInt32LE(cdCursor + 20);
+    const uncompressedSize = buffer.readUInt32LE(cdCursor + 24);
+    const filenameLen = buffer.readUInt16LE(cdCursor + 28);
+    const extraFieldLen = buffer.readUInt16LE(cdCursor + 30);
+    const commentLen = buffer.readUInt16LE(cdCursor + 32);
+    const localHeaderOffset = buffer.readUInt32LE(cdCursor + 42);
+
+    if (cdCursor + 46 + filenameLen > buffer.length) {
+      return { valid: false, error: "Malformed archive: filename exceeds Central Directory entry length." };
+    }
+
+    const filename = buffer.toString("utf8", cdCursor + 46, cdCursor + 46 + filenameLen);
+
+    // Path traversal, absolute path, and dangerous separator inspection
+    if (
+      filename.includes("..") ||
+      filename.startsWith("/") ||
+      filename.startsWith("\\") ||
+      /^[a-zA-Z]:[/\\]/.test(filename) ||
+      filename.includes("\0")
+    ) {
       return {
         valid: false,
-        error: "Security violation: archive exhibits potential compression bomb ratio.",
+        error: `Security violation: archive contains dangerous directory traversal or absolute path (${filename.slice(0, 50)}).`,
       };
+    }
+
+    // Compression bomb prevention
+    totalUncompressedSize += uncompressedSize;
+    if (totalUncompressedSize > MAX_TOTAL_UNCOMPRESSED_BYTES) {
+      return {
+        valid: false,
+        error: "Security violation: archive cumulative uncompressed size exceeds limit (500 MB).",
+      };
+    }
+
+    if (compressedSize > 0 && uncompressedSize / compressedSize > 100 && uncompressedSize > 10 * 1024 * 1024) {
+      return {
+        valid: false,
+        error: `Security violation: archive entry exhibits dangerous decompression ratio (${Math.round(uncompressedSize / compressedSize)}:1).`,
+      };
+    }
+
+    // Verify corresponding local header offset
+    if (localHeaderOffset + 30 > buffer.length) {
+      return { valid: false, error: "Malformed archive: local header offset out of bounds." };
+    }
+    if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+      return { valid: false, error: "Malformed archive: mismatched local file header signature." };
     }
 
     entriesInspected++;
-    // Advance offset: 30 + filenameLength + extraFieldLength + compressedSize
-    offset += 30 + filenameLength + extraFieldLength + compressedSize;
+    cdCursor += 46 + filenameLen + extraFieldLen + commentLen;
+  }
+
+  if (entriesInspected !== totalEntries) {
+    return {
+      valid: false,
+      error: `Malformed archive: expected ${totalEntries} entries in Central Directory but parsed ${entriesInspected}.`,
+    };
+  }
+
+  // 3. Scan local headers up to cdOffset to ensure consistency
+  let localCursor = 0;
+  while (localCursor + 30 <= cdOffset && localCursor < buffer.length) {
+    if (buffer.readUInt32LE(localCursor) !== 0x04034b50) {
+      break; // Reached end of local headers or padding
+    }
+
+    const localFnLen = buffer.readUInt16LE(localCursor + 26);
+    const localExtraLen = buffer.readUInt16LE(localCursor + 28);
+    const localCompSize = buffer.readUInt32LE(localCursor + 18);
+
+    if (localCursor + 30 + localFnLen > buffer.length) {
+      return { valid: false, error: "Malformed archive: truncated local header filename." };
+    }
+
+    const localFn = buffer.toString("utf8", localCursor + 30, localCursor + 30 + localFnLen);
+    if (
+      localFn.includes("..") ||
+      localFn.startsWith("/") ||
+      localFn.startsWith("\\") ||
+      /^[a-zA-Z]:[/\\]/.test(localFn) ||
+      localFn.includes("\0")
+    ) {
+      return {
+        valid: false,
+        error: `Security violation: local file header contains dangerous directory traversal path (${localFn.slice(0, 50)}).`,
+      };
+    }
+
+    localCursor += 30 + localFnLen + localExtraLen + localCompSize;
   }
 
   return { valid: true };

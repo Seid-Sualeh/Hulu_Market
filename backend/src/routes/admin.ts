@@ -2,6 +2,8 @@ import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
 import { requireAdmin } from "../middleware/auth.js";
+import { getStorageAdapter } from "../services/storage.js";
+import { recordFailedCleanup } from "../services/storageCleanup.js";
 
 export const adminRouter = Router();
 
@@ -546,14 +548,62 @@ adminRouter.patch("/channels/:id", async (req: Request, res: Response): Promise<
 
 /**
  * DELETE /api/admin/channels/:id
+ * Securely deletes a channel. If the listing is a digital product with an attached file,
+ * transactionally removes the file metadata and purges the private storage object.
+ * Records failed storage cleanup for administrative reconciliation if storage deletion fails.
  */
 adminRouter.delete("/channels/:id", async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
   try {
     const channelId = parseInt(req.params.id as string, 10);
-    await pool.query("DELETE FROM channels WHERE id = ?", [channelId]);
+    if (isNaN(channelId) || channelId <= 0) {
+      res.status(400).json({ success: false, error: "Invalid channel ID." });
+      return;
+    }
+
+    await conn.beginTransaction();
+
+    // Check if channel has an attached private digital product file
+    const [fileRows] = await conn.query<RowDataPacket[]>(
+      "SELECT id, storage_key FROM digital_product_files WHERE listing_id = ? LIMIT 1 FOR UPDATE",
+      [channelId]
+    );
+
+    let storageKeyToDelete: string | null = null;
+    if (fileRows.length > 0) {
+      storageKeyToDelete = fileRows[0].storage_key;
+      await conn.query("DELETE FROM digital_product_files WHERE listing_id = ?", [channelId]);
+    }
+
+    const [deleteResult] = await conn.query<ResultSetHeader>(
+      "DELETE FROM channels WHERE id = ?",
+      [channelId]
+    );
+
+    if (deleteResult.affectedRows === 0) {
+      await conn.rollback();
+      res.status(404).json({ success: false, error: "Channel not found." });
+      return;
+    }
+
+    await conn.commit();
+
+    // After commit, safely clean up private storage object
+    if (storageKeyToDelete) {
+      const storage = getStorageAdapter();
+      try {
+        await storage.deleteObject(storageKeyToDelete);
+      } catch (storageErr: unknown) {
+        await recordFailedCleanup(storageKeyToDelete, channelId, (storageErr as Error).message);
+      }
+    }
+
     res.json({ success: true, message: `Channel #${channelId} deleted` });
   } catch (error: unknown) {
+    await conn.rollback();
     res.status(500).json({ success: false, error: (error as Error).message });
+  } finally {
+    conn.release();
   }
 });
 
