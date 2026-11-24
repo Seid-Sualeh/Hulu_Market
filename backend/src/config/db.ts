@@ -210,6 +210,10 @@ export async function initDatabase(): Promise<boolean> {
         seller_username VARCHAR(150) NULL,
         seller_phone VARCHAR(50) NULL,
         rejection_reason TEXT NULL,
+        reviewed_by INT NULL DEFAULT NULL,
+        reviewed_at TIMESTAMP NULL DEFAULT NULL,
+        agreed_declaration BOOLEAN NOT NULL DEFAULT FALSE,
+        declared_at TIMESTAMP NULL DEFAULT NULL,
         status ENUM('active', 'pending', 'sold', 'rejected') NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -242,6 +246,10 @@ export async function initDatabase(): Promise<boolean> {
     await safeAddColumn(conn, "channels", "page_count", "INT NULL DEFAULT NULL");
     await safeAddColumn(conn, "channels", "language", "VARCHAR(50) NULL DEFAULT NULL");
     await safeAddColumn(conn, "channels", "digital_metadata", "TEXT NULL DEFAULT NULL");
+    await safeAddColumn(conn, "channels", "reviewed_by", "INT NULL DEFAULT NULL");
+    await safeAddColumn(conn, "channels", "reviewed_at", "TIMESTAMP NULL DEFAULT NULL");
+    await safeAddColumn(conn, "channels", "agreed_declaration", "BOOLEAN NOT NULL DEFAULT FALSE");
+    await safeAddColumn(conn, "channels", "declared_at", "TIMESTAMP NULL DEFAULT NULL");
 
     // 3. Transactions & Escrow table
     await conn.query(`

@@ -8,11 +8,13 @@ import {
   AlertCircle,
   ArrowDownLeft,
   ArrowUpRight,
+  BookOpen,
   Check,
   CheckCircle2,
   Clock,
   DollarSign,
   Eye,
+  FileText,
   Filter,
   Inbox,
   Layers,
@@ -73,8 +75,14 @@ interface ChannelRecord {
   id: number;
   seller_id?: number;
   name: string;
-  platform: "YouTube" | "Instagram" | "TikTok" | "Telegram" | "Facebook";
+  platform: string;
   category: string;
+  listing_type?: string;
+  subcategory?: string;
+  file_format?: string;
+  page_count?: number | null;
+  language?: string | null;
+  digital_metadata?: string | null;
   subscribers: string;
   views_or_likes: string;
   price: number;
@@ -84,6 +92,14 @@ interface ChannelRecord {
   description?: string;
   seller_username?: string;
   seller_phone?: string;
+  seller_first_name?: string;
+  seller_last_name?: string;
+  seller_email?: string;
+  seller_registered_phone?: string;
+  agreed_declaration?: boolean | number;
+  declared_at?: string | null;
+  reviewed_by?: number | null;
+  reviewed_at?: string | null;
   rejection_reason?: string;
   status: "active" | "sold" | "pending" | "rejected";
   created_at: string;
@@ -169,6 +185,15 @@ export default function AdminDashboardPage() {
 
   // Search & Filters
   const [searchUser, setSearchUser] = useState("");
+  const [approvalsCategoryFilter, setApprovalsCategoryFilter] = useState<"all" | "social-media" | "ebooks-digital">("all");
+  const [channelCategoryFilter, setChannelCategoryFilter] = useState<"all" | "social-media" | "ebooks-digital">("all");
+  const [channelStatusFilter, setChannelStatusFilter] = useState<"all" | "active" | "pending" | "rejected" | "sold">("all");
+
+  // Rejection modal state
+  const [rejectingListing, setRejectingListing] = useState<ChannelRecord | null>(null);
+  const [rejectionReasonInput, setRejectionReasonInput] = useState("");
+  const [isRejecting, setIsRejecting] = useState(false);
+
   const [newChannelModal, setNewChannelModal] = useState(false);
   const [newChannelForm, setNewChannelForm] = useState({
     name: "",
@@ -421,6 +446,67 @@ export default function AdminDashboardPage() {
       }
     } catch {
       setFeedback({ type: "error", text: "Failed to adjust balance" });
+    }
+  };
+
+  const handleApproveListing = async (channel: ChannelRecord) => {
+    try {
+      const res = await fetchBackend(`admin/channels/${channel.id}/approve`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        const isDigital = channel.listing_type === "ebooks-digital";
+        setFeedback({
+          type: "success",
+          text: isDigital
+            ? `Digital Product #${channel.id} ("${channel.name}") approved & published to marketplace!`
+            : `Channel #${channel.id} ("${channel.name}") approved & published to marketplace!`,
+        });
+        loadAdminData();
+      } else {
+        setFeedback({ type: "error", text: data.error || "Approval failed." });
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Network error approving listing." });
+    }
+  };
+
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingListing) return;
+    const trimmed = rejectionReasonInput.trim();
+    if (!trimmed || trimmed.length < 3) {
+      alert("A valid rejection reason (minimum 3 characters) is required.");
+      return;
+    }
+
+    setIsRejecting(true);
+    try {
+      const res = await fetchBackend(`admin/channels/${rejectingListing.id}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: trimmed }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const isDigital = rejectingListing.listing_type === "ebooks-digital";
+        setFeedback({
+          type: "success",
+          text: isDigital
+            ? `Digital Product #${rejectingListing.id} marked as rejected.`
+            : `Channel #${rejectingListing.id} marked as rejected.`,
+        });
+        setRejectingListing(null);
+        setRejectionReasonInput("");
+        loadAdminData();
+      } else {
+        alert(data.error || "Failed to reject listing.");
+      }
+    } catch {
+      alert("Network error rejecting listing.");
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -706,131 +792,284 @@ export default function AdminDashboardPage() {
       {/* TAB 2: APPROVALS HUB (ALL USER REQUESTS CENTRALIZED) */}
       {activeTab === "approvals" && (
         <div className="space-y-8 animate-in fade-in duration-200">
-          {/* 1. Pending Channel Listings (/sell) */}
+          {/* 1. Pending Marketplace Listings (/sell) */}
           <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-4">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="grid size-8 place-items-center rounded-lg bg-cyan-500/10 text-cyan-400">
                   <Layers size={16} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Pending Channel Listings (From /sell)</h3>
-                  <p className="text-[11px] text-slate-400">Sellers submitted channels for platform verification</p>
+                  <h3 className="text-sm font-bold text-white">Pending Marketplace Listings (From /sell)</h3>
+                  <p className="text-[11px] text-slate-400">Sellers submitted channels &amp; digital products for platform verification</p>
                 </div>
               </div>
-              <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 text-xs font-bold text-cyan-400">
-                {pendingChannels.length} Pending
-              </span>
+
+              {/* Filter Pills */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setApprovalsCategoryFilter("all")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    approvalsCategoryFilter === "all"
+                      ? "bg-amber-400 text-slate-950 shadow-sm"
+                      : "bg-[#0c1017] text-slate-400 hover:text-white border border-white/[0.06]"
+                  }`}
+                >
+                  All ({pendingChannels.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApprovalsCategoryFilter("social-media")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    approvalsCategoryFilter === "social-media"
+                      ? "bg-cyan-500 text-slate-950 shadow-sm"
+                      : "bg-[#0c1017] text-slate-400 hover:text-white border border-white/[0.06]"
+                  }`}
+                >
+                  Social Media ({pendingChannels.filter((c) => c.listing_type !== "ebooks-digital").length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setApprovalsCategoryFilter("ebooks-digital")}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    approvalsCategoryFilter === "ebooks-digital"
+                      ? "bg-purple-500 text-white shadow-sm"
+                      : "bg-[#0c1017] text-slate-400 hover:text-white border border-white/[0.06]"
+                  }`}
+                >
+                  Digital Products ({pendingChannels.filter((c) => c.listing_type === "ebooks-digital").length})
+                </button>
+              </div>
             </div>
 
-            {pendingChannels.length > 0 ? (
+            {pendingChannels.filter((c) => {
+              if (approvalsCategoryFilter === "social-media") return c.listing_type !== "ebooks-digital";
+              if (approvalsCategoryFilter === "ebooks-digital") return c.listing_type === "ebooks-digital";
+              return true;
+            }).length > 0 ? (
               <div className="space-y-4">
-                {pendingChannels.map((ch) => (
-                  <div key={ch.id} className="rounded-2xl border border-white/[0.08] bg-[#0c1017] p-5 space-y-4 shadow-inner">
-                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                      {/* Left: Channel Information */}
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs font-bold text-amber-400">Listing #{ch.id}</span>
-                          <h4 className="text-base font-extrabold text-white">{ch.name}</h4>
-                          <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 text-xs font-bold text-cyan-400">
-                            {ch.platform}
-                          </span>
-                          <span className="rounded-full bg-purple-500/10 border border-purple-500/30 px-2.5 py-0.5 text-xs font-semibold text-purple-300">
-                            {ch.category}
-                          </span>
-                        </div>
+                {pendingChannels
+                  .filter((c) => {
+                    if (approvalsCategoryFilter === "social-media") return c.listing_type !== "ebooks-digital";
+                    if (approvalsCategoryFilter === "ebooks-digital") return c.listing_type === "ebooks-digital";
+                    return true;
+                  })
+                  .map((ch) => {
+                    const isDigital = ch.listing_type === "ebooks-digital";
+                    if (isDigital) {
+                      return (
+                        <div key={ch.id} className="rounded-2xl border border-amber-500/30 bg-[#0c1017] p-5 space-y-4 shadow-inner">
+                          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                            {/* Left: Product Information */}
+                            <div className="space-y-2.5 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono text-xs font-bold text-amber-400">Listing #{ch.id}</span>
+                                <h4 className="text-base font-extrabold text-white">{ch.name}</h4>
+                                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-xs font-bold text-amber-300">
+                                  <BookOpen size={12} />
+                                  Ebooks &amp; Digital Products
+                                </span>
+                                {ch.subcategory && (
+                                  <span className="rounded-full bg-purple-500/10 border border-purple-500/30 px-2.5 py-0.5 text-xs font-semibold text-purple-300">
+                                    {ch.subcategory}
+                                  </span>
+                                )}
+                                {ch.file_format && (
+                                  <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 text-xs font-extrabold text-cyan-300 uppercase">
+                                    {ch.file_format}
+                                  </span>
+                                )}
+                              </div>
 
-                        <div className="flex items-center gap-4 text-xs flex-wrap">
-                          <span className="text-slate-300">
-                            Subscribers/Followers: <strong className="text-white">{ch.subscribers}</strong>
-                          </span>
-                          {ch.views_or_likes && ch.views_or_likes !== "0" && (
-                            <span className="text-slate-400">
-                              Views/Engagement: <strong className="text-slate-300">{ch.views_or_likes}</strong>
-                            </span>
-                          )}
-                          <span className="text-emerald-400 font-bold text-sm">
-                            {Number(ch.price).toLocaleString()} ETB
-                          </span>
-                        </div>
+                              {/* Key Metrics Row */}
+                              <div className="flex items-center gap-3 text-xs flex-wrap">
+                                <span className="text-emerald-400 font-extrabold text-base">
+                                  {Number(ch.price).toLocaleString()} ETB
+                                </span>
+                                {ch.page_count && Number(ch.page_count) > 0 ? (
+                                  <span className="rounded-md bg-white/[0.04] border border-white/[0.08] px-2 py-0.5 text-slate-300 font-medium">
+                                    📄 {ch.page_count} Pages
+                                  </span>
+                                ) : null}
+                                {ch.language && (
+                                  <span className="rounded-md bg-white/[0.04] border border-white/[0.08] px-2 py-0.5 text-slate-300 font-medium">
+                                    🌐 {ch.language}
+                                  </span>
+                                )}
+                                <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase">
+                                  • Pending Review
+                                </span>
+                              </div>
 
-                        {ch.description && (
-                          <p className="text-xs text-slate-300 bg-white/[0.02] border border-white/[0.04] p-2.5 rounded-xl leading-relaxed">
-                            {ch.description}
-                          </p>
-                        )}
+                              {/* Product Description */}
+                              {ch.description && (
+                                <div className="space-y-1">
+                                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Product Description:</span>
+                                  <p className="text-xs text-slate-200 bg-white/[0.02] border border-white/[0.06] p-3 rounded-xl leading-relaxed whitespace-pre-wrap">
+                                    {ch.description}
+                                  </p>
+                                </div>
+                              )}
 
-                        <div className="flex items-center gap-4 text-[11px] text-slate-400 pt-1 flex-wrap">
-                          <span>Seller: <strong className="text-slate-200">{ch.seller_username || `ID #${ch.seller_id}`}</strong></span>
-                          <span>Phone: <strong className="text-slate-200 font-mono">{ch.seller_phone || "—"}</strong></span>
-                          <span>Submitted: {new Date(ch.created_at).toLocaleString()}</span>
-                        </div>
-                      </div>
+                              {/* Seller Info & Declaration Audit Bar */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-white/[0.06] text-[11px] text-slate-400">
+                                <div>
+                                  <span>Seller: </span>
+                                  <strong className="text-slate-200">
+                                    {ch.seller_first_name ? `${ch.seller_first_name} ${ch.seller_last_name || ""}` : (ch.seller_username || `ID #${ch.seller_id}`)}
+                                  </strong>
+                                  {ch.seller_username && <span className="text-slate-500 ml-1">({ch.seller_username})</span>}
+                                  <span className="block mt-0.5">
+                                    Contact Phone: <strong className="text-slate-300 font-mono">{ch.seller_phone || ch.seller_registered_phone || "—"}</strong>
+                                  </span>
+                                </div>
 
-                      {/* Right: Dashboard Screenshot & Channel Link */}
-                      <div className="flex flex-col items-center md:items-end gap-2 shrink-0">
-                        {ch.screenshot_url ? (
-                          <a
-                            href={formatUploadUrl(ch.screenshot_url)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Click to inspect full resolution dashboard screenshot"
-                            className="group block"
-                          >
-                            <img
-                              src={formatUploadUrl(ch.screenshot_url)}
-                              alt="Dashboard screenshot"
-                              className="h-24 w-36 rounded-xl object-cover border border-teal-500/30 group-hover:border-teal-400 transition cursor-pointer shadow-lg"
-                            />
-                            <p className="text-[10px] text-teal-400 text-center mt-1 font-semibold group-hover:underline">
-                              Inspect Dashboard Proof ↗
-                            </p>
-                          </a>
-                        ) : (
-                          <div className="h-20 w-32 rounded-xl bg-slate-900 border border-dashed border-slate-700 grid place-items-center text-[10px] text-slate-500 text-center p-2">
-                            No screenshot uploaded
+                                <div>
+                                  <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                                    <CheckCircle2 size={12} />
+                                    Seller Declared Ownership / Distribution Rights
+                                  </span>
+                                  <span className="block text-slate-500 mt-0.5">
+                                    Submitted: {new Date(ch.created_at).toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        )}
 
-                        {ch.link_url && (
-                          <a
-                            href={ch.link_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/20 transition"
+                          {/* Action Buttons */}
+                          <div className="flex gap-2.5 pt-2 border-t border-white/[0.04]">
+                            <button
+                              onClick={() => handleApproveListing(ch)}
+                              className="flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5"
+                            >
+                              <Check size={14} />
+                              <span>Approve &amp; Publish Digital Product</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejectingListing(ch);
+                                setRejectionReasonInput(
+                                  "Product description or digital material details could not be verified. Please provide a more detailed syllabus, table of contents, or accurate page count."
+                                );
+                              }}
+                              className="rounded-xl bg-rose-500/20 border border-rose-500/40 px-4 py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition flex items-center gap-1.5"
+                            >
+                              <X size={14} />
+                              <span>Reject Listing (With Reason)</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Social Media Channel Card
+                    return (
+                      <div key={ch.id} className="rounded-2xl border border-white/[0.08] bg-[#0c1017] p-5 space-y-4 shadow-inner">
+                        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                          {/* Left: Channel Information */}
+                          <div className="space-y-2 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold text-amber-400">Listing #{ch.id}</span>
+                              <h4 className="text-base font-extrabold text-white">{ch.name}</h4>
+                              <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 text-xs font-bold text-cyan-400">
+                                {ch.platform}
+                              </span>
+                              <span className="rounded-full bg-purple-500/10 border border-purple-500/30 px-2.5 py-0.5 text-xs font-semibold text-purple-300">
+                                {ch.category}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-4 text-xs flex-wrap">
+                              <span className="text-slate-300">
+                                Subscribers/Followers: <strong className="text-white">{ch.subscribers}</strong>
+                              </span>
+                              {ch.views_or_likes && ch.views_or_likes !== "0" && (
+                                <span className="text-slate-400">
+                                  Views/Engagement: <strong className="text-slate-300">{ch.views_or_likes}</strong>
+                                </span>
+                              )}
+                              <span className="text-emerald-400 font-bold text-sm">
+                                {Number(ch.price).toLocaleString()} ETB
+                              </span>
+                            </div>
+
+                            {ch.description && (
+                              <p className="text-xs text-slate-300 bg-white/[0.02] border border-white/[0.04] p-2.5 rounded-xl leading-relaxed">
+                                {ch.description}
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-4 text-[11px] text-slate-400 pt-1 flex-wrap">
+                              <span>Seller: <strong className="text-slate-200">{ch.seller_first_name ? `${ch.seller_first_name} ${ch.seller_last_name || ""}` : (ch.seller_username || `ID #${ch.seller_id}`)}</strong></span>
+                              <span>Phone: <strong className="text-slate-200 font-mono">{ch.seller_phone || ch.seller_registered_phone || "—"}</strong></span>
+                              <span>Submitted: {new Date(ch.created_at).toLocaleString()}</span>
+                            </div>
+                          </div>
+
+                          {/* Right: Dashboard Screenshot & Channel Link */}
+                          <div className="flex flex-col items-center md:items-end gap-2 shrink-0">
+                            {ch.screenshot_url ? (
+                              <a
+                                href={formatUploadUrl(ch.screenshot_url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Click to inspect full resolution dashboard screenshot"
+                                className="group block"
+                              >
+                                <img
+                                  src={formatUploadUrl(ch.screenshot_url)}
+                                  alt="Dashboard screenshot"
+                                  className="h-24 w-36 rounded-xl object-cover border border-teal-500/30 group-hover:border-teal-400 transition cursor-pointer shadow-lg"
+                                />
+                                <p className="text-[10px] text-teal-400 text-center mt-1 font-semibold group-hover:underline">
+                                  Inspect Dashboard Proof ↗
+                                </p>
+                              </a>
+                            ) : (
+                              <div className="h-20 w-32 rounded-xl bg-slate-900 border border-dashed border-slate-700 grid place-items-center text-[10px] text-slate-500 text-center p-2">
+                                No screenshot uploaded
+                              </div>
+                            )}
+
+                            {ch.link_url && (
+                              <a
+                                href={ch.link_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/20 transition"
+                              >
+                                <span>Open Channel Link</span>
+                                <span className="text-[10px]">↗</span>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-2.5 pt-2 border-t border-white/[0.04]">
+                          <button
+                            onClick={() => handleApproveListing(ch)}
+                            className="flex-1 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition shadow-md shadow-emerald-500/20"
                           >
-                            <span>Open Channel Link</span>
-                            <span className="text-[10px]">↗</span>
-                          </a>
-                        )}
+                            ✓ Approve &amp; Publish to Marketplace
+                          </button>
+                          <button
+                            onClick={() => {
+                              setRejectingListing(ch);
+                              setRejectionReasonInput(
+                                "Channel statistics or followers could not be verified from the provided screenshot. Please upload an uncropped analytics dashboard."
+                              );
+                            }}
+                            className="rounded-xl bg-rose-500/20 border border-rose-500/40 px-4 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition"
+                          >
+                            Reject Listing (With Reason)
+                          </button>
+                        </div>
                       </div>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex gap-2.5 pt-2 border-t border-white/[0.04]">
-                      <button
-                        onClick={() => handleUpdateChannelStatus(ch.id, "active")}
-                        className="flex-1 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 transition shadow-md shadow-emerald-500/20"
-                      >
-                        ✓ Approve &amp; Publish to Marketplace
-                      </button>
-                      <button
-                        onClick={() => {
-                          const reason = prompt(
-                            `Enter rejection reason for "${ch.name}" to notify the seller:`,
-                            "Channel statistics or followers could not be verified from the provided screenshot. Please upload an uncropped analytics dashboard."
-                          );
-                          if (reason === null) return;
-                          handleUpdateChannelStatus(ch.id, "rejected", reason);
-                        }}
-                        className="rounded-xl bg-rose-500/20 border border-rose-500/40 px-4 py-2 text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition"
-                      >
-                        Reject Listing (With Reason)
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
               </div>
             ) : (
               <div className="py-8 text-center text-xs text-slate-500">
@@ -1284,13 +1523,13 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* TAB 5: CHANNELS MANAGEMENT */}
+      {/* TAB 5: CHANNELS & DIGITAL PRODUCTS MANAGEMENT */}
       {activeTab === "channels" && (
         <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-5 animate-in fade-in duration-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-bold text-white">Channel Listings Catalog</h2>
-              <p className="text-xs text-slate-400">View and toggle status of all channels</p>
+              <h2 className="text-base font-bold text-white">Marketplace Catalog (Channels &amp; Digital Products)</h2>
+              <p className="text-xs text-slate-400">View, filter, and moderate listings across all marketplace categories</p>
             </div>
             <button
               onClick={() => setNewChannelModal(true)}
@@ -1301,65 +1540,173 @@ export default function AdminDashboardPage() {
             </button>
           </div>
 
+          {/* Filters Bar */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-[#0b0f17] border border-white/[0.08] p-1 rounded-xl text-xs">
+              <span className="text-slate-400 text-[11px] px-2 font-medium">Category:</span>
+              <button
+                type="button"
+                onClick={() => setChannelCategoryFilter("all")}
+                className={`px-3 py-1 rounded-lg font-bold transition ${
+                  channelCategoryFilter === "all" ? "bg-amber-400 text-slate-950" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setChannelCategoryFilter("social-media")}
+                className={`px-3 py-1 rounded-lg font-bold transition ${
+                  channelCategoryFilter === "social-media" ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Social Media
+              </button>
+              <button
+                type="button"
+                onClick={() => setChannelCategoryFilter("ebooks-digital")}
+                className={`px-3 py-1 rounded-lg font-bold transition ${
+                  channelCategoryFilter === "ebooks-digital" ? "bg-purple-500 text-white" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Digital Products
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-[#0b0f17] border border-white/[0.08] p-1 rounded-xl text-xs">
+              <span className="text-slate-400 text-[11px] px-2 font-medium">Status:</span>
+              {(["all", "active", "pending", "rejected", "sold"] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setChannelStatusFilter(st)}
+                  className={`px-2.5 py-1 rounded-lg font-bold uppercase text-[10px] transition ${
+                    channelStatusFilter === st
+                      ? st === "active"
+                        ? "bg-emerald-500 text-slate-950"
+                        : st === "pending"
+                        ? "bg-amber-400 text-slate-950"
+                        : st === "rejected"
+                        ? "bg-rose-500 text-white"
+                        : st === "sold"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white/20 text-white"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#0b0f17] text-slate-400 uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="py-3 px-4">Channel Name</th>
-                  <th className="py-3 px-4">Platform</th>
-                  <th className="py-3 px-4">Subscribers</th>
+                  <th className="py-3 px-4">Title / Name</th>
+                  <th className="py-3 px-4">Category &amp; Platform</th>
+                  <th className="py-3 px-4">Specifications</th>
                   <th className="py-3 px-4">Price</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
-                {channelsList.map((ch) => (
-                  <tr key={ch.id} className="hover:bg-white/[0.02]">
-                    <td className="py-3.5 px-4 font-bold text-white">{ch.name}</td>
-                    <td className="py-3.5 px-4 text-cyan-400 font-semibold">{ch.platform}</td>
-                    <td className="py-3.5 px-4 text-slate-300">{ch.subscribers}</td>
-                    <td className="py-3.5 px-4 font-bold text-amber-300">{Number(ch.price).toLocaleString()} ETB</td>
-                    <td className="py-3.5 px-4">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                        ch.status === "active"
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : ch.status === "sold"
-                          ? "bg-blue-500/20 text-blue-300"
-                          : ch.status === "pending"
-                          ? "bg-amber-500/20 text-amber-300"
-                          : "bg-rose-500/20 text-rose-300"
-                      }`}>
-                        {ch.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right space-x-1.5">
-                      {ch.status !== "active" && (
-                        <button
-                          onClick={() => handleUpdateChannelStatus(ch.id, "active")}
-                          className="rounded-lg bg-emerald-500/20 px-2 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/30"
-                        >
-                          Activate
-                        </button>
-                      )}
-                      {ch.status !== "sold" && (
-                        <button
-                          onClick={() => handleUpdateChannelStatus(ch.id, "sold")}
-                          className="rounded-lg bg-blue-500/20 px-2 py-1 text-[11px] font-bold text-blue-300 hover:bg-blue-500/30"
-                        >
-                          Mark Sold
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDeleteChannel(ch.id)}
-                        className="rounded-lg bg-rose-500/10 p-1 text-rose-400 hover:bg-rose-500/20"
-                        title="Delete channel"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {channelsList
+                  .filter((ch) => {
+                    if (channelCategoryFilter === "social-media" && ch.listing_type === "ebooks-digital") return false;
+                    if (channelCategoryFilter === "ebooks-digital" && ch.listing_type !== "ebooks-digital") return false;
+                    if (channelStatusFilter !== "all" && ch.status !== channelStatusFilter) return false;
+                    return true;
+                  })
+                  .map((ch) => {
+                    const isDigital = ch.listing_type === "ebooks-digital";
+                    return (
+                      <tr key={ch.id} className="hover:bg-white/[0.02]">
+                        <td className="py-3.5 px-4 font-bold text-white">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{ch.name}</span>
+                            {isDigital && (
+                              <span className="rounded bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-bold text-amber-300">
+                                Digital
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-normal">
+                            Seller: {ch.seller_username || `ID #${ch.seller_id || "—"}`}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {isDigital ? (
+                            <span className="text-purple-300 font-semibold">{ch.subcategory || "Digital Product"}</span>
+                          ) : (
+                            <span className="text-cyan-400 font-semibold">{ch.platform}</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-300">
+                          {isDigital ? (
+                            <div className="space-y-0.5">
+                              <span className="rounded bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.2 text-[10px] font-bold text-cyan-300 uppercase">
+                                {ch.file_format || "FILE"}
+                              </span>
+                              {ch.page_count && Number(ch.page_count) > 0 ? (
+                                <span className="text-slate-400 text-[10px] ml-1.5">{ch.page_count} pages</span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span>{ch.subscribers} followers</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-amber-300">{Number(ch.price).toLocaleString()} ETB</td>
+                        <td className="py-3.5 px-4">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                            ch.status === "active"
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : ch.status === "sold"
+                              ? "bg-blue-500/20 text-blue-300"
+                              : ch.status === "pending"
+                              ? "bg-amber-500/20 text-amber-300"
+                              : "bg-rose-500/20 text-rose-300"
+                          }`}>
+                            {ch.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-right space-x-1.5">
+                          {ch.status !== "active" && (
+                            <button
+                              onClick={() => handleApproveListing(ch)}
+                              className="rounded-lg bg-emerald-500/20 px-2 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/30"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          {ch.status !== "rejected" && (
+                            <button
+                              onClick={() => {
+                                setRejectingListing(ch);
+                                setRejectionReasonInput(
+                                  isDigital
+                                    ? "Product description or digital material details could not be verified."
+                                    : "Channel statistics or followers could not be verified from the provided screenshot."
+                                );
+                              }}
+                              className="rounded-lg bg-rose-500/20 px-2 py-1 text-[11px] font-bold text-rose-300 hover:bg-rose-500/30"
+                            >
+                              Reject
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteChannel(ch.id)}
+                            className="rounded-lg bg-rose-500/10 p-1 text-rose-400 hover:bg-rose-500/20"
+                            title="Delete listing"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -1554,6 +1901,75 @@ export default function AdminDashboardPage() {
                   className="rounded-xl bg-teal-500 px-5 py-2 font-bold text-slate-950 hover:bg-teal-400"
                 >
                   Publish Listing
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal: Rejection Reason Dialog */}
+      {rejectingListing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-lg rounded-2xl border border-rose-500/40 bg-[#111722] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex items-center gap-2 text-rose-400">
+                <AlertCircle size={20} />
+                <h3 className="text-base font-bold text-white">
+                  Reject {rejectingListing.listing_type === "ebooks-digital" ? "Digital Product" : "Channel"} Listing
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setRejectingListing(null);
+                  setRejectionReasonInput("");
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-1">
+              <p>
+                Listing: <strong className="text-white font-mono">#{rejectingListing.id} - "{rejectingListing.name}"</strong>
+              </p>
+              <p className="text-[11px] text-slate-400">
+                Provide a clear, actionable reason. This reason will be delivered directly to the seller so they can correct and resubmit their listing.
+              </p>
+            </div>
+
+            <form onSubmit={handleConfirmReject} className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-semibold text-slate-200">Rejection Reason *</label>
+                <textarea
+                  required
+                  rows={4}
+                  maxLength={1000}
+                  value={rejectionReasonInput}
+                  onChange={(e) => setRejectionReasonInput(e.target.value)}
+                  placeholder="Explain why this listing is being returned for revision..."
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#0c1017] p-3 text-xs text-white placeholder-slate-500 focus:border-rose-400 focus:outline-none"
+                />
+                <span className="text-[10px] text-slate-500">{rejectionReasonInput.length}/1000 characters</span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectingListing(null);
+                    setRejectionReasonInput("");
+                  }}
+                  className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRejecting || rejectionReasonInput.trim().length < 3}
+                  className="rounded-xl bg-rose-600 px-5 py-2 text-xs font-bold text-white hover:bg-rose-500 disabled:opacity-40 transition"
+                >
+                  {isRejecting ? "Rejecting..." : "Confirm & Send Rejection"}
                 </button>
               </div>
             </form>

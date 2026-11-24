@@ -135,20 +135,36 @@ channelsRouter.post("/", authenticateToken, async (req: Request, res: Response):
         return;
       }
 
-      if (!agreed_declaration && agreed_declaration !== undefined) {
+      if (agreed_declaration !== true) {
         res.status(400).json({ success: false, error: "You must accept the seller permission declaration to submit." });
         return;
       }
 
       const sanitized = validation.sanitized;
 
+      // Construct metadata with declaration record
+      let metaObj: Record<string, unknown> = {};
+      if (sanitized.digital_metadata) {
+        try {
+          metaObj = JSON.parse(sanitized.digital_metadata);
+        } catch {
+          metaObj = {};
+        }
+      }
+      metaObj.declaration = {
+        agreed: true,
+        declared_at: new Date().toISOString(),
+      };
+      const finalMetadata = JSON.stringify(metaObj);
+
       const [result] = await pool.query<ResultSetHeader>(
         `INSERT INTO channels (
           seller_id, name, platform, category, listing_type, subcategory,
           file_format, page_count, language, digital_metadata,
           subscribers, views_or_likes, price, link_url, screenshot_url,
-          supporting_screenshots, description, seller_username, seller_phone, status
-        ) VALUES (?, ?, ?, ?, 'ebooks-digital', ?, ?, ?, ?, ?, '0', '0', ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+          supporting_screenshots, description, seller_username, seller_phone,
+          agreed_declaration, declared_at, status
+        ) VALUES (?, ?, ?, ?, 'ebooks-digital', ?, ?, ?, ?, ?, '0', '0', ?, ?, ?, ?, ?, ?, ?, TRUE, NOW(), 'pending')`,
         [
           targetSellerId,
           sanitized.name,
@@ -158,7 +174,7 @@ channelsRouter.post("/", authenticateToken, async (req: Request, res: Response):
           sanitized.file_format,
           sanitized.page_count,
           sanitized.language,
-          sanitized.digital_metadata,
+          finalMetadata,
           sanitized.price,
           link_url || "",
           screenshot_url || null,
@@ -201,7 +217,7 @@ channelsRouter.post("/", authenticateToken, async (req: Request, res: Response):
       return;
     }
 
-    if (!agreed_declaration && agreed_declaration !== undefined) {
+    if (agreed_declaration !== true) {
       res.status(400).json({ success: false, error: "You must accept the seller permission declaration to submit." });
       return;
     }
@@ -210,8 +226,8 @@ channelsRouter.post("/", authenticateToken, async (req: Request, res: Response):
       `INSERT INTO channels (
         seller_id, name, platform, category, listing_type, subscribers, views_or_likes,
         price, link_url, screenshot_url, supporting_screenshots, description,
-        seller_username, seller_phone, status
-      ) VALUES (?, ?, ?, ?, 'social-media', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        seller_username, seller_phone, agreed_declaration, declared_at, status
+      ) VALUES (?, ?, ?, ?, 'social-media', ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, NOW(), 'pending')`,
       [
         targetSellerId,
         resolvedName,
@@ -326,6 +342,8 @@ channelsRouter.patch("/:id/resubmit", authenticateToken, async (req: Request, re
         seller_phone = COALESCE(?, seller_phone),
         status = 'pending',
         rejection_reason = NULL,
+        reviewed_by = NULL,
+        reviewed_at = NULL,
         updated_at = NOW()
        WHERE id = ?`,
       [

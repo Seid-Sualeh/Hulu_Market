@@ -136,16 +136,285 @@ adminRouter.patch("/users/:id", async (req: Request, res: Response): Promise<voi
 
 /**
  * GET /api/admin/channels
- * Returns channel listings.
+ * Returns channel and digital product listings with seller details and filtering.
  */
-adminRouter.get("/channels", async (_req: Request, res: Response): Promise<void> => {
+adminRouter.get("/channels", async (req: Request, res: Response): Promise<void> => {
   try {
-    const [channels]: [RowDataPacket[], unknown] = await pool.query(
-      "SELECT * FROM channels ORDER BY id DESC"
-    );
+    const listingType = req.query.listing_type ? String(req.query.listing_type) : null;
+    const status = req.query.status ? String(req.query.status) : null;
+
+    let query = `
+      SELECT c.*, 
+             c.name as title,
+             u.first_name as seller_first_name, 
+             u.last_name as seller_last_name, 
+             u.email as seller_email,
+             u.phone as seller_registered_phone
+      FROM channels c
+      LEFT JOIN users u ON c.seller_id = u.id
+    `;
+    const conditions: string[] = [];
+    const params: string[] = [];
+
+    if (listingType && listingType !== "all") {
+      if (listingType.toLowerCase() === "social-media") {
+        conditions.push("(LOWER(c.listing_type) = 'social-media' OR c.listing_type IS NULL)");
+      } else {
+        conditions.push("LOWER(c.listing_type) = LOWER(?)");
+        params.push(listingType);
+      }
+    }
+
+    if (status && status !== "all") {
+      conditions.push("LOWER(c.status) = LOWER(?)");
+      params.push(status);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(" AND ")}`;
+    }
+
+    query += " ORDER BY c.id DESC";
+
+    const [channels]: [RowDataPacket[], unknown] = await pool.query(query, params);
     res.json({ success: true, channels });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
+ * POST /api/admin/channels/:id/approve
+ * Atomically approves a pending listing (digital product or social media channel).
+ * Requires admin role, runs inside a transaction, and records audit metadata.
+ */
+adminRouter.post("/channels/:id/approve", async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
+  try {
+    const channelId = parseInt(req.params.id as string, 10);
+    if (isNaN(channelId)) {
+      res.status(400).json({ success: false, error: "Invalid listing ID." });
+      return;
+    }
+
+    const adminId = req.user!.id;
+
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query<RowDataPacket[]>(
+      "SELECT * FROM channels WHERE id = ? FOR UPDATE",
+      [channelId]
+    );
+
+    if (rows.length === 0) {
+      await conn.rollback();
+      res.status(404).json({ success: false, error: "Listing not found." });
+      return;
+    }
+
+    const channel = rows[0];
+
+    // Prevent repeated or conflicting review actions
+    if (channel.status !== "pending") {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: `Listing #${channelId} cannot be approved because its current status is '${channel.status}'. Only pending listings can be approved.`,
+      });
+      return;
+    }
+
+    // Preserve and update digital_metadata with moderation audit
+    let metaObj: Record<string, unknown> = {};
+    if (channel.digital_metadata) {
+      try {
+        metaObj = JSON.parse(channel.digital_metadata);
+      } catch {
+        metaObj = {};
+      }
+    }
+    metaObj.moderation = {
+      admin_id: adminId,
+      action: "approved",
+      decision_at: new Date().toISOString(),
+    };
+    const updatedMetadata = JSON.stringify(metaObj);
+
+    await conn.query(
+      `UPDATE channels SET
+        status = 'active',
+        rejection_reason = NULL,
+        reviewed_by = ?,
+        reviewed_at = NOW(),
+        digital_metadata = ?,
+        updated_at = NOW()
+       WHERE id = ?`,
+      [adminId, updatedMetadata, channelId]
+    );
+
+    await conn.commit();
+
+    // Seller notification
+    if (channel.seller_id) {
+      try {
+        const isDigital = channel.listing_type === "ebooks-digital";
+        const title = isDigital
+          ? "Digital Product Approved & Published! 🎉"
+          : "Channel Listing Approved & Published! 🎉";
+        const message = isDigital
+          ? `Congratulations! Your digital product "${channel.name}" (${channel.subcategory || "Digital"}) has been approved by the administrator and is now live in the marketplace.`
+          : `Congratulations! Your channel listing "${channel.name}" (${channel.platform}) has been approved by the administrator and is now live in the marketplace.`;
+
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+           VALUES (?, 'marketplace', ?, ?, '/my-marketplace', 'View Listing')`,
+          [channel.seller_id, title, message]
+        );
+      } catch { /* ignore notification errors */ }
+    }
+
+    res.json({
+      success: true,
+      message: `Listing #${channelId} approved and published successfully.`,
+      channelId,
+      status: "active",
+      reviewed_by: adminId,
+    });
+  } catch (error: unknown) {
+    await conn.rollback();
+    const err = error as Error;
+    console.error("[Admin Approve Channel Error]:", err);
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
+/**
+ * POST /api/admin/channels/:id/reject
+ * Atomically rejects a pending listing with a mandatory non-empty reason.
+ * Requires admin role, runs inside a transaction, and records audit metadata.
+ */
+adminRouter.post("/channels/:id/reject", async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
+  try {
+    const channelId = parseInt(req.params.id as string, 10);
+    if (isNaN(channelId)) {
+      res.status(400).json({ success: false, error: "Invalid listing ID." });
+      return;
+    }
+
+    const rawReason = req.body.reason || req.body.rejectionReason;
+    const reason = typeof rawReason === "string" ? rawReason.trim() : "";
+
+    if (!reason || reason.length < 3) {
+      res.status(400).json({
+        success: false,
+        error: "A non-empty rejection reason (minimum 3 characters) is required to reject a listing.",
+      });
+      return;
+    }
+
+    if (reason.length > 1000) {
+      res.status(400).json({
+        success: false,
+        error: "Rejection reason must not exceed 1,000 characters.",
+      });
+      return;
+    }
+
+    const adminId = req.user!.id;
+
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query<RowDataPacket[]>(
+      "SELECT * FROM channels WHERE id = ? FOR UPDATE",
+      [channelId]
+    );
+
+    if (rows.length === 0) {
+      await conn.rollback();
+      res.status(404).json({ success: false, error: "Listing not found." });
+      return;
+    }
+
+    const channel = rows[0];
+
+    // Prevent repeated or conflicting review actions
+    if (channel.status !== "pending") {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: `Listing #${channelId} cannot be rejected because its current status is '${channel.status}'. Only pending listings can be reviewed.`,
+      });
+      return;
+    }
+
+    // Preserve and update digital_metadata with moderation audit
+    let metaObj: Record<string, unknown> = {};
+    if (channel.digital_metadata) {
+      try {
+        metaObj = JSON.parse(channel.digital_metadata);
+      } catch {
+        metaObj = {};
+      }
+    }
+    metaObj.moderation = {
+      admin_id: adminId,
+      action: "rejected",
+      reason: reason,
+      decision_at: new Date().toISOString(),
+    };
+    const updatedMetadata = JSON.stringify(metaObj);
+
+    await conn.query(
+      `UPDATE channels SET
+        status = 'rejected',
+        rejection_reason = ?,
+        reviewed_by = ?,
+        reviewed_at = NOW(),
+        digital_metadata = ?,
+        updated_at = NOW()
+       WHERE id = ?`,
+      [reason, adminId, updatedMetadata, channelId]
+    );
+
+    await conn.commit();
+
+    // Seller notification
+    if (channel.seller_id) {
+      try {
+        const isDigital = channel.listing_type === "ebooks-digital";
+        const title = isDigital
+          ? "Digital Product Needs Revision"
+          : "Channel Listing Needs Revision";
+        const message = isDigital
+          ? `Your digital product "${channel.name}" was not approved. Reason: ${reason}. You can correct the information and resubmit it for review.`
+          : `Your channel listing "${channel.name}" was not approved. Reason: ${reason}. You can correct the information and resubmit it for review.`;
+
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+           VALUES (?, 'marketplace', ?, ?, '/my-marketplace', 'Review & Resubmit')`,
+          [channel.seller_id, title, message]
+        );
+      } catch { /* ignore notification errors */ }
+    }
+
+    res.json({
+      success: true,
+      message: `Listing #${channelId} marked as rejected.`,
+      channelId,
+      status: "rejected",
+      rejectionReason: reason,
+      reviewed_by: adminId,
+    });
+  } catch (error: unknown) {
+    await conn.rollback();
+    const err = error as Error;
+    console.error("[Admin Reject Channel Error]:", err);
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
   }
 });
 
@@ -208,14 +477,20 @@ adminRouter.patch("/channels/:id", async (req: Request, res: Response): Promise<
     const params: (string | number)[] = [];
 
     if (status) {
-      updates.push("status = ?");
-      params.push(status);
-
-      if (status === "active") {
-        updates.push("rejection_reason = NULL");
-      } else if (status === "rejected" && rejectionReason) {
-        updates.push("rejection_reason = ?");
-        params.push(rejectionReason);
+      if (status === "rejected") {
+        const trimmed = typeof rejectionReason === "string" ? rejectionReason.trim() : "";
+        if (!trimmed || trimmed.length < 3) {
+          res.status(400).json({ success: false, error: "A valid rejection reason (minimum 3 characters) is required." });
+          return;
+        }
+        updates.push("status = ?", "rejection_reason = ?", "reviewed_by = ?", "reviewed_at = NOW()");
+        params.push("rejected", trimmed, req.user!.id);
+      } else if (status === "active") {
+        updates.push("status = ?", "rejection_reason = NULL", "reviewed_by = ?", "reviewed_at = NOW()");
+        params.push("active", req.user!.id);
+      } else {
+        updates.push("status = ?");
+        params.push(status);
       }
     }
 
@@ -230,29 +505,34 @@ adminRouter.patch("/channels/:id", async (req: Request, res: Response): Promise<
     }
 
     params.push(channelId);
-    await pool.query(`UPDATE channels SET ${updates.join(", ")} WHERE id = ?`, params);
+    await pool.query(`UPDATE channels SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`, params);
 
     // Notify seller if status changed
     if (status && channel.seller_id) {
       try {
+        const isDigital = channel.listing_type === "ebooks-digital";
         if (status === "active") {
+          const title = isDigital ? "Digital Product Approved & Published! 🎉" : "Channel Listing Approved & Published! 🎉";
+          const message = isDigital
+            ? `Congratulations! Your digital product "${channel.name}" (${channel.subcategory || "Digital"}) has been approved by the administrator and is now live in the marketplace.`
+            : `Congratulations! Your channel listing "${channel.name}" (${channel.platform}) has been approved by the administrator and is now live in the marketplace.`;
+
           await pool.query(
             `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
-             VALUES (?, 'marketplace', 'Channel Listing Approved & Published! 🎉', ?, '/my-marketplace', 'View Listing')`,
-            [
-              channel.seller_id,
-              `Congratulations! Your channel listing "${channel.name}" (${channel.platform}) has been approved by the administrator and is now live in the marketplace.`,
-            ]
+             VALUES (?, 'marketplace', ?, ?, '/my-marketplace', 'View Listing')`,
+            [channel.seller_id, title, message]
           );
         } else if (status === "rejected") {
-          const reasonText = rejectionReason ? `Reason: ${rejectionReason}` : "Please check your listing details and ensure statistics are verifiable.";
+          const reasonText = rejectionReason ? `Reason: ${rejectionReason}` : "Please check your listing details and ensure information is verifiable.";
+          const title = isDigital ? "Digital Product Needs Revision" : "Channel Listing Needs Revision";
+          const message = isDigital
+            ? `Your digital product "${channel.name}" was not approved. ${reasonText} You can correct the information and resubmit it for review.`
+            : `Your channel listing "${channel.name}" was not approved. ${reasonText} You can correct the information and resubmit it for review.`;
+
           await pool.query(
             `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
-             VALUES (?, 'marketplace', 'Channel Listing Needs Revision', ?, '/my-marketplace', 'Review & Resubmit')`,
-            [
-              channel.seller_id,
-              `Your channel listing "${channel.name}" was not approved. ${reasonText} You can correct the information and resubmit it for review.`,
-            ]
+             VALUES (?, 'marketplace', ?, ?, '/my-marketplace', 'Review & Resubmit')`,
+            [channel.seller_id, title, message]
           );
         }
       } catch { /* ignore notification failure */ }

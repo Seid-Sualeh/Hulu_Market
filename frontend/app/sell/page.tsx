@@ -157,14 +157,27 @@ function SellPageInner() {
       .then((data) => {
         if (data.success && data.channel) {
           const ch = data.channel;
-          setDisplayName(ch.name || "");
-          setSelectedPlatform((ch.platform || "telegram").toLowerCase() as SocialPlatform);
-          setCategory(ch.category || "");
-          setFollowers(ch.subscribers || "");
-          setViewsOrLikes(ch.views_or_likes || "");
-          setDescription(ch.description || "");
-          setChannelLink(ch.link_url || "");
-          setPrice(String(ch.price || ""));
+          if (ch.listing_type === "ebooks-digital") {
+            setSelectedMarketplace("ebooks-digital");
+            setDigitalTitle(ch.name || "");
+            setDigitalDescription(ch.description || "");
+            if (ch.subcategory) setDigitalSubcategory(ch.subcategory);
+            if (ch.file_format) setDigitalFileFormat(ch.file_format);
+            setDigitalPrice(String(ch.price || ""));
+            setDigitalPageCount(ch.page_count ? String(ch.page_count) : "");
+            setDigitalLanguage(ch.language || "");
+            setDigitalAgreed(true);
+          } else {
+            setDisplayName(ch.name || "");
+            setSelectedPlatform((ch.platform || "telegram").toLowerCase() as SocialPlatform);
+            setCategory(ch.category || "");
+            setFollowers(ch.subscribers || "");
+            setViewsOrLikes(ch.views_or_likes || "");
+            setDescription(ch.description || "");
+            setChannelLink(ch.link_url || "");
+            setPrice(String(ch.price || ""));
+            setAgreed(true);
+          }
           setSellerUsername(ch.seller_username || "");
           setPhoneNumber(ch.seller_phone || "");
           if (ch.screenshot_url) {
@@ -546,8 +559,11 @@ function SellPageInner() {
         seller_phone: phoneNumber.trim() || undefined,
       };
 
-      const res = await fetchBackend("channels", {
-        method: "POST",
+      const path = editChannelId ? `channels/${editChannelId}/resubmit` : "channels";
+      const method = editChannelId ? "PATCH" : "POST";
+
+      const res = await fetchBackend(path, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -1490,7 +1506,7 @@ function SellPageInner() {
               ) : (
                 <>
                   <ShieldCheck size={18} />
-                  <span>Submit Digital Product for Review</span>
+                  <span>{editChannelId ? "Resubmit Digital Product for Review" : "Submit Digital Product for Review"}</span>
                   <ArrowRight size={16} />
                 </>
               )}
