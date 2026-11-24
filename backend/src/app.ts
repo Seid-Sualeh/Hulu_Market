@@ -9,6 +9,7 @@ import { authRouter } from "./routes/auth.js";
 import { adminRouter } from "./routes/admin.js";
 import { transactionsRouter } from "./routes/transactions.js";
 import { channelsRouter } from "./routes/channels.js";
+import { digitalFilesRouter } from "./routes/digitalFiles.js";
 import { userRouter } from "./routes/user.js";
 import { escrowRouter } from "./routes/escrow.js";
 import { uploadRouter } from "./routes/upload.js";
@@ -141,6 +142,10 @@ export function createApp(frontendOrigin?: string) {
   // Mount Transactions routes (Deposits, Withdrawals, History)
   app.use("/transactions", transactionsRouter);
   app.use("/api/transactions", transactionsRouter);
+
+  // Mount Digital Product original file routes (before general channels route)
+  app.use("/channels", digitalFilesRouter);
+  app.use("/api/channels", digitalFilesRouter);
 
   // Mount Channels routes
   app.use("/channels", channelsRouter);

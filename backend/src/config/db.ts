@@ -369,6 +369,26 @@ export async function initDatabase(): Promise<boolean> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 9. Digital Product Original Files (Secure Private Storage Metadata)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS digital_product_files (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        listing_id INT NOT NULL,
+        seller_id INT NOT NULL,
+        original_filename VARCHAR(255) NOT NULL,
+        file_format VARCHAR(20) NOT NULL,
+        mime_type VARCHAR(100) NOT NULL,
+        file_size_bytes BIGINT NOT NULL,
+        storage_key VARCHAR(255) NOT NULL,
+        checksum_sha256 VARCHAR(64) NOT NULL,
+        status ENUM('pending', 'uploaded', 'failed') NOT NULL DEFAULT 'uploaded',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_dpf_listing (listing_id),
+        INDEX idx_dpf_seller (seller_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     // Migrate: add last_seen to users for online/offline indicator
     await safeAddColumn(conn, "users", "last_seen", "TIMESTAMP NULL DEFAULT NULL");
 

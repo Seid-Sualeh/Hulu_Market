@@ -30,6 +30,13 @@ import {
   Tag,
   Trash2,
   XCircle,
+  UploadCloud,
+  FileCheck,
+  FileText,
+  X,
+  Loader2,
+  Paperclip,
+  ShieldCheck,
 } from "lucide-react";
 
 interface MyChannelListing {
@@ -43,6 +50,7 @@ interface MyChannelListing {
   file_format?: string;
   page_count?: number | null;
   language?: string | null;
+  digital_metadata?: string | Record<string, any> | null;
   subscribers: string;
   views_or_likes: string;
   price: number;
@@ -88,6 +96,101 @@ export default function MyMarketPlacePage() {
   const rejectedCount = channels.filter((c) => c.status === "rejected").length;
   const soldCount = channels.filter((c) => c.status === "sold").length;
   const totalCount = channels.length;
+
+  // Digital Product File Attachment Modal State
+  const [uploadModalListing, setUploadModalListing] = useState<MyChannelListing | null>(null);
+  const [activeFileMeta, setActiveFileMeta] = useState<any | null>(null);
+  const [loadingFileMeta, setLoadingFileMeta] = useState<boolean>(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState<boolean>(false);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
+  const [fileUploadSuccess, setFileUploadSuccess] = useState<string | null>(null);
+
+  const openFileUploadModal = async (listing: MyChannelListing) => {
+    setUploadModalListing(listing);
+    setSelectedFile(null);
+    setFileUploadError(null);
+    setFileUploadSuccess(null);
+    setLoadingFileMeta(true);
+    try {
+      const res = await fetchBackend(`channels/${listing.id}/file`);
+      const data = await res.json();
+      if (data.success) {
+        setActiveFileMeta(data.file);
+      } else {
+        setActiveFileMeta(null);
+      }
+    } catch {
+      setActiveFileMeta(null);
+    } finally {
+      setLoadingFileMeta(false);
+    }
+  };
+
+  const handleUploadDigitalFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uploadModalListing || !selectedFile) {
+      setFileUploadError("Please select a file to upload.");
+      return;
+    }
+
+    if (selectedFile.size > 50 * 1024 * 1024) {
+      setFileUploadError("File size exceeds 50 MB limit.");
+      return;
+    }
+
+    setIsUploadingFile(true);
+    setFileUploadError(null);
+    setFileUploadSuccess(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const res = await fetchBackend(`channels/${uploadModalListing.id}/file`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success && data.file) {
+        setActiveFileMeta(data.file);
+        setSelectedFile(null);
+        setFileUploadSuccess("Original digital product file uploaded and secured.");
+        loadMyChannels();
+      } else {
+        setFileUploadError(data.error || "Failed to upload digital file.");
+      }
+    } catch (err: unknown) {
+      setFileUploadError((err as Error).message || "Network error uploading file.");
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
+  const handleDeleteDigitalFile = async (listingId: number) => {
+    if (!confirm("Are you sure you want to delete this attached file?")) return;
+    setIsUploadingFile(true);
+    setFileUploadError(null);
+    setFileUploadSuccess(null);
+    try {
+      const res = await fetchBackend(`channels/${listingId}/file`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActiveFileMeta(null);
+        setFileUploadSuccess("File removed from listing.");
+        loadMyChannels();
+      } else {
+        setFileUploadError(data.error || "Failed to delete file.");
+      }
+    } catch {
+      setFileUploadError("Network error deleting file.");
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
 
   const filteredChannels = channels.filter((ch) => {
     if (activeTab === "all") return true;
@@ -423,6 +526,40 @@ export default function MyMarketPlacePage() {
                           </span>
                         </div>
                       )}
+
+                      {/* Digital File Attachment Manager Row */}
+                      {isDigital && (
+                        <div className="rounded-xl border border-white/[0.08] bg-[#101622] p-3 flex items-center justify-between gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <div className="grid size-7 place-items-center rounded-lg bg-[#D4AF37]/10 text-[#D4AF37]">
+                              <Paperclip size={14} />
+                            </div>
+                            <div>
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                                Original Digital Asset
+                              </span>
+                              <span className="text-xs font-semibold text-slate-200">
+                                {Boolean((item.digital_metadata as any)?.file_attached)
+                                  ? "✓ File Attached & Secured"
+                                  : "No File Attached Yet"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => openFileUploadModal(item)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[#D4AF37]/40 bg-[#D4AF37]/10 px-3 py-1.5 text-xs font-bold text-[#D4AF37] hover:bg-[#D4AF37]/20 transition"
+                          >
+                            <UploadCloud size={14} />
+                            <span>
+                              {Boolean((item.digital_metadata as any)?.file_attached)
+                                ? "Manage / Replace File"
+                                : "Attach Original File"}
+                            </span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Bottom Footer: Price & Link */}
@@ -466,6 +603,182 @@ export default function MyMarketPlacePage() {
           )}
         </div>
       </div>
+
+      {/* Digital Product Secure File Upload Modal */}
+      {uploadModalListing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-[#0e131d] p-6 shadow-2xl space-y-6">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-[#D4AF37] flex items-center gap-1.5">
+                  <ShieldCheck size={13} />
+                  <span>Secure Private Asset Storage</span>
+                </span>
+                <h3 className="text-lg font-bold text-white leading-tight">
+                  {uploadModalListing.name}
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setUploadModalListing(null)}
+                className="grid size-8 place-items-center rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Currently Attached File Card */}
+            {loadingFileMeta ? (
+              <div className="flex items-center justify-center py-6 text-xs text-slate-400 gap-2">
+                <Loader2 size={16} className="animate-spin text-[#D4AF37]" />
+                <span>Checking secure storage...</span>
+              </div>
+            ) : activeFileMeta ? (
+              <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="grid size-9 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
+                      <FileCheck size={18} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">
+                        Attached Original File
+                      </span>
+                      <p className="text-xs font-bold text-white truncate max-w-[220px]" title={activeFileMeta.original_filename}>
+                        {activeFileMeta.original_filename}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="text-[11px] font-bold uppercase px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300">
+                    {activeFileMeta.file_format}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-300 pt-2 border-t border-emerald-500/15">
+                  <div>
+                    <span className="text-slate-500 block">File Size:</span>
+                    <span>{(activeFileMeta.file_size_bytes / (1024 * 1024)).toFixed(2)} MB</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Status:</span>
+                    <span className="text-emerald-400 font-semibold">✓ Verified &amp; Encrypted</span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    disabled={isUploadingFile}
+                    onClick={() => handleDeleteDigitalFile(uploadModalListing.id)}
+                    className="inline-flex items-center gap-1 text-[11px] text-rose-400 hover:text-rose-300 transition"
+                  >
+                    <Trash2 size={12} />
+                    <span>Delete Attached File</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-300 flex items-start gap-2.5">
+                <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  No original digital file is attached to this product yet. Buyers cannot download resources until you attach the original file.
+                </span>
+              </div>
+            )}
+
+            {/* Upload or Replace Form */}
+            <form onSubmit={handleUploadDigitalFile} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-300 block">
+                  {activeFileMeta ? "Upload Replacement File" : "Select Original File"}
+                </label>
+
+                <div className="relative border-2 border-dashed border-white/10 hover:border-[#D4AF37]/50 rounded-2xl p-6 text-center transition bg-[#0a0e16]">
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,.epub,.txt,.xls,.xlsx"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setSelectedFile(e.target.files[0]);
+                        setFileUploadError(null);
+                        setFileUploadSuccess(null);
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+
+                  <div className="flex flex-col items-center gap-2 pointer-events-none">
+                    <div className="grid size-12 place-items-center rounded-2xl bg-[#D4AF37]/10 text-[#D4AF37]">
+                      <UploadCloud size={24} />
+                    </div>
+                    {selectedFile ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold text-white truncate max-w-xs">{selectedFile.name}</p>
+                        <p className="text-[11px] text-[#D4AF37]">
+                          {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB &bull; Ready to upload
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-slate-200">
+                          Click or drag and drop your digital product
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          PDF, DOC, DOCX, PPT, PPTX, ZIP, EPUB, TXT, XLS, XLSX (Max 50 MB)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Feedback messages */}
+              {fileUploadError && (
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
+                  {fileUploadError}
+                </div>
+              )}
+
+              {fileUploadSuccess && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+                  {fileUploadSuccess}
+                </div>
+              )}
+
+              {/* Submit CTA */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setUploadModalListing(null)}
+                  className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white transition"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={!selectedFile || isUploadingFile}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#D4AF37] px-5 py-2 text-xs font-bold text-slate-950 transition hover:brightness-110 disabled:pointer-events-none disabled:opacity-50 shadow-md shadow-[#D4AF37]/20"
+                >
+                  {isUploadingFile ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Encrypting &amp; Uploading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud size={14} />
+                      <span>{activeFileMeta ? "Replace File" : "Upload File"}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
