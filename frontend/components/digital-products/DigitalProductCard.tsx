@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import {
   BookOpen,
   FileText,
@@ -90,7 +91,10 @@ export default function DigitalProductCard({ product }: DigitalProductCardProps)
       : "Verified Seller";
 
   return (
-    <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#121722] to-[#0c1017] p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-[#D4AF37]/40 hover:shadow-xl hover:shadow-[#D4AF37]/5">
+    <Link
+      href={`/digital-products/${product.id}`}
+      className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#121722] to-[#0c1017] p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-[#D4AF37]/40 hover:shadow-xl hover:shadow-[#D4AF37]/5 cursor-pointer block"
+    >
       {/* Top Background subtle gradient accent */}
       <div
         className={`absolute inset-x-0 top-0 h-28 bg-gradient-to-b ${badgeStyle.glow} pointer-events-none opacity-40 group-hover:opacity-60 transition`}
@@ -193,6 +197,6 @@ export default function DigitalProductCard({ product }: DigitalProductCardProps)
           </span>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
-import { authenticateToken } from "../middleware/auth.js";
+import { authenticateToken, optionalAuth } from "../middleware/auth.js";
 import {
   DIGITAL_PRODUCT_CATEGORY_NAME,
   DIGITAL_PRODUCT_CATEGORY_SLUG,
@@ -461,27 +461,58 @@ channelsRouter.get("/my", authenticateToken, async (req: Request, res: Response)
 
 /**
  * GET /api/channels/:id
- * Returns single channel details.
+ * Returns single listing details (digital product or social media channel).
+ * Strictly enforces public visibility: unauthenticated and non-owner callers only receive active (approved) listings.
+ * Pending, rejected, or missing listings return HTTP 404 to public visitors.
+ * Protects private seller phone numbers, rejection reasons, and admin review audit records.
  */
-channelsRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
+channelsRouter.get("/:id", optionalAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const channelId = parseInt(req.params.id as string, 10);
-    if (isNaN(channelId)) {
-      res.status(400).json({ success: false, error: "Invalid channel ID." });
+    const rawId = req.params.id as string;
+    const channelId = parseInt(rawId, 10);
+    if (isNaN(channelId) || channelId <= 0) {
+      res.status(400).json({ success: false, error: "Invalid listing ID." });
       return;
     }
 
     const [rows] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM channels WHERE id = ? LIMIT 1",
+      `SELECT c.id, c.seller_id, c.name, c.name as title, c.platform, c.category, c.listing_type,
+              c.subcategory, c.file_format, c.page_count, c.language, c.price, c.description,
+              c.subscribers, c.views_or_likes, c.link_url, c.status, c.created_at, c.updated_at,
+              c.screenshot_url, c.supporting_screenshots, c.seller_username,
+              c.rejection_reason, c.reviewed_by, c.reviewed_at, c.seller_phone,
+              u.first_name as seller_first_name, u.last_name as seller_last_name
+       FROM channels c
+       LEFT JOIN users u ON c.seller_id = u.id
+       WHERE c.id = ?
+       LIMIT 1`,
       [channelId]
     );
 
     if (rows.length === 0) {
-      res.status(404).json({ success: false, error: "Channel not found." });
+      res.status(404).json({ success: false, error: "Listing not found." });
       return;
     }
 
-    res.json({ success: true, channel: rows[0] });
+    const listing = rows[0];
+    const isOwner = req.user && Number(req.user.id) === Number(listing.seller_id);
+    const isAdmin = req.user && req.user.role === "admin";
+
+    // Strictly enforce public visibility: non-active listings return 404 unless caller is owner or admin
+    if (listing.status !== "active" && !isOwner && !isAdmin) {
+      res.status(404).json({ success: false, error: "Listing not found or currently unavailable." });
+      return;
+    }
+
+    // Sanitize output: never leak private moderation fields or seller phone to the public
+    if (!isOwner && !isAdmin) {
+      delete listing.rejection_reason;
+      delete listing.reviewed_by;
+      delete listing.reviewed_at;
+      delete listing.seller_phone;
+    }
+
+    res.json({ success: true, channel: listing });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

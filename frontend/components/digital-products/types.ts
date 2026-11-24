@@ -31,6 +31,7 @@ export interface DigitalProductItem {
   seller_username?: string | null;
   seller_first_name?: string | null;
   seller_last_name?: string | null;
+  screenshot_url?: string | null;
   created_at?: string;
 }
 
