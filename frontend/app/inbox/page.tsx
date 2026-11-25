@@ -151,6 +151,20 @@ export default function InboxPage() {
           createdAt: new Date(o.created_at).toLocaleDateString(),
         }));
         setOrders(mapped);
+
+        // Check if specific order is requested via URL query e.g. /inbox?orderId=123
+        if (typeof window !== "undefined") {
+          const urlParams = new URLSearchParams(window.location.search);
+          const targetOrderId = parseInt(urlParams.get("orderId") || "", 10);
+          if (!isNaN(targetOrderId) && targetOrderId > 0) {
+            const targetOrder = mapped.find((o) => o.id === targetOrderId);
+            if (targetOrder) {
+              openOrderChat(targetOrder);
+              return;
+            }
+          }
+        }
+
         // Update selected order if still open
         if (selectedOrder) {
           const updated = mapped.find((o) => o.id === selectedOrder.id);

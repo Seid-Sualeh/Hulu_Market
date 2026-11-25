@@ -25,8 +25,12 @@ import {
   AlertCircle,
   Eye,
   Lock,
+  X,
+  ShoppingCart,
+  ArrowRight,
 } from "lucide-react";
 import { fetchBackend, resolveImageUrl } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import DigitalProductCard from "@/components/digital-products/DigitalProductCard";
 import type { DigitalProductItem } from "@/components/digital-products/types";
 
@@ -48,6 +52,74 @@ export default function DigitalProductDetailsPage({ params }: PageProps) {
   // Related products state
   const [relatedProducts, setRelatedProducts] = useState<DigitalProductItem[]>([]);
   const [loadingRelated, setLoadingRelated] = useState<boolean>(false);
+
+  // Authentication & purchase states
+  const { signedIn, user, refreshUser } = useAuth();
+  const [purchaseModalOpen, setPurchaseModalOpen] = useState<boolean>(false);
+  const [purchasing, setPurchasing] = useState<boolean>(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+  const [conflictOrderId, setConflictOrderId] = useState<number | null>(null);
+
+  const isOwner = Boolean(
+    user?.id && product && Number(user.id) === Number(product.seller_id)
+  );
+
+  const handleInitiateBuy = () => {
+    if (!product) return;
+    if (!signedIn || !user) {
+      router.push(`/auth?redirect=${encodeURIComponent(`/digital-products/${productId}`)}`);
+      return;
+    }
+    setPurchaseError(null);
+    setPurchaseSuccess(null);
+    setConflictOrderId(null);
+    setPurchaseModalOpen(true);
+  };
+
+  const handleConfirmPurchase = async () => {
+    if (!product) return;
+    setPurchasing(true);
+    setPurchaseError(null);
+    setConflictOrderId(null);
+
+    try {
+      const res = await fetchBackend("escrow/order/digital", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channelId: product.id,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.status === 201 && data.success) {
+        try {
+          localStorage.removeItem("hulu_pending_buy");
+        } catch {}
+        refreshUser?.();
+        setPurchaseSuccess(
+          `Escrow order #${data.orderId} created successfully! Redirecting to your transaction chat...`
+        );
+        setTimeout(() => {
+          router.push(`/inbox?orderId=${data.orderId}`);
+        }, 1500);
+      } else if (res.status === 409) {
+        setPurchaseError(
+          data.error || "An active escrow trade is already in progress for this digital product."
+        );
+        if (data.orderId) {
+          setConflictOrderId(data.orderId);
+        }
+      } else {
+        setPurchaseError(data.error || "Failed to initiate escrow purchase.");
+      }
+    } catch {
+      setPurchaseError("Network error. Please try again.");
+    } finally {
+      setPurchasing(false);
+    }
+  };
 
   // Load product details
   useEffect(() => {
@@ -438,19 +510,45 @@ export default function DigitalProductDetailsPage({ params }: PageProps) {
             </h1>
           </div>
 
-          {/* Price Box */}
-          <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-r from-[#121722] to-[#0d1118] p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <span className="text-[11px] uppercase font-bold tracking-wider text-slate-400 block">
-                Selling Price
-              </span>
-              <div className="text-3xl font-black text-[#D4AF37] tracking-tight">
-                {Number(product.price || 0).toLocaleString()} <span className="text-xl font-bold">ETB</span>
+          {/* Price & Purchase Action Box */}
+          <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-r from-[#121722] to-[#0d1118] p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <span className="text-[11px] uppercase font-bold tracking-wider text-slate-400 block">
+                  Selling Price
+                </span>
+                <div className="text-3xl font-black text-[#D4AF37] tracking-tight">
+                  {Number(product.price || 0).toLocaleString()} <span className="text-xl font-bold">ETB</span>
+                </div>
+              </div>
+
+              <div className="text-xs text-slate-400 max-w-xs sm:text-right">
+                Verified fixed pricing in Ethiopian Birr with zero hidden buyer commissions.
               </div>
             </div>
 
-            <div className="text-xs text-slate-400 max-w-xs sm:text-right">
-              Verified fixed pricing in Ethiopian Birr with zero hidden buyer commissions.
+            <div className="pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {isOwner ? (
+                <div className="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs font-semibold text-amber-300">
+                  <User className="size-4" />
+                  <span>Your Listing (Seller View — Direct Purchases Disabled)</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleInitiateBuy}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-to-r from-[#D4AF37] via-amber-400 to-[#b5922f] px-7 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-amber-950/20 transition-all hover:brightness-110 active:scale-[0.99] cursor-pointer"
+                >
+                  <ShieldCheck className="size-4 text-slate-950" />
+                  <span>Buy with Escrow</span>
+                  <ArrowRight className="size-4 text-slate-950" />
+                </button>
+              )}
+
+              <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                <Lock className="size-3.5 text-[#D4AF37]" />
+                <span>Escrow-Protected Reusable Digital Asset</span>
+              </div>
             </div>
           </div>
 
@@ -596,6 +694,175 @@ export default function DigitalProductDetailsPage({ params }: PageProps) {
           </div>
         )}
       </div>
+
+      {/* Purchase Confirmation Modal */}
+      {purchaseModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-lg rounded-3xl border border-white/10 bg-[#0d131f] p-6 shadow-2xl shadow-black/90 space-y-5 text-left">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#D4AF37] block">
+                  Hulu Market Escrow
+                </span>
+                <h3 className="text-xl font-extrabold text-white">
+                  Confirm Digital Purchase
+                </h3>
+              </div>
+              <button
+                type="button"
+                disabled={purchasing}
+                onClick={() => setPurchaseModalOpen(false)}
+                className="grid size-8 place-items-center rounded-xl bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition disabled:opacity-50"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            {/* Product Summary */}
+            <div className="rounded-2xl border border-white/5 bg-[#121722] p-4 space-y-2">
+              <div className="text-xs text-slate-400 uppercase font-semibold">Selected Item</div>
+              <div className="font-bold text-white text-base leading-snug">{displayTitle}</div>
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-300">
+                <span className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-1 font-medium">
+                  {product.subcategory || "Digital Product"}
+                </span>
+                <span className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-1 font-medium">
+                  {format}
+                </span>
+                <span className="text-slate-400">by {sellerDisplayName}</span>
+              </div>
+            </div>
+
+            {/* Price & Balance Breakdown */}
+            <div className="rounded-2xl border border-white/5 bg-[#121722] p-4 space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Purchase Price</span>
+                <span className="font-bold text-white">
+                  {Number(product.price || 0).toLocaleString()} ETB
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Your Wallet Balance</span>
+                <span className="font-bold text-white">
+                  {Number(user?.balance || 0).toLocaleString()} ETB
+                </span>
+              </div>
+              <div className="border-t border-white/5 pt-2 flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-medium">Balance After Purchase</span>
+                <span className={`font-bold ${Number(user?.balance || 0) < Number(product.price || 0) ? "text-rose-400" : "text-teal-400"}`}>
+                  {(Number(user?.balance || 0) - Number(product.price || 0)).toLocaleString()} ETB
+                </span>
+              </div>
+            </div>
+
+            {/* Insufficient Funds Warning */}
+            {Number(user?.balance || 0) < Number(product.price || 0) ? (
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 space-y-3">
+                <div className="flex items-start gap-2.5 text-amber-300 text-xs">
+                  <AlertCircle className="size-4 shrink-0 mt-0.5" />
+                  <p>
+                    Insufficient wallet balance. You need{" "}
+                    <span className="font-bold">
+                      {(Number(product.price || 0) - Number(user?.balance || 0)).toLocaleString()} ETB
+                    </span>{" "}
+                    more to complete this purchase.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      localStorage.setItem(
+                        "hulu_pending_buy",
+                        JSON.stringify({
+                          channelId: product.id,
+                          channelName: product.title,
+                          price: Number(product.price),
+                        })
+                      );
+                    } catch {}
+                    router.push(
+                      `/deposit?redirect=${encodeURIComponent(`/digital-products/${productId}`)}&reason=insufficient_balance&needed=${Number(product.price)}`
+                    );
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-amber-500 px-4 py-2.5 text-xs font-bold text-slate-950 transition hover:brightness-110 cursor-pointer"
+                >
+                  <span>Deposit Funds & Continue</span>
+                  <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-teal-500/20 bg-teal-500/5 p-3 flex items-start gap-2.5 text-xs text-slate-300">
+                <ShieldCheck className="size-4 text-teal-400 shrink-0 mt-0.5" />
+                <p>
+                  Funds will be safely locked in Hulu Market Escrow until you receive and verify the digital product in your transaction chat.
+                </p>
+              </div>
+            )}
+
+            {/* Feedback / Error Alerts */}
+            {purchaseError && (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="size-4 text-rose-400 shrink-0 mt-0.5" />
+                  <span>{purchaseError}</span>
+                </div>
+                {conflictOrderId && (
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/inbox?orderId=${conflictOrderId}`)}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#D4AF37] hover:underline cursor-pointer"
+                  >
+                    <span>Open Active Trade Chat (#{conflictOrderId})</span>
+                    <ChevronRight className="size-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {purchaseSuccess && (
+              <div className="rounded-xl border border-teal-500/30 bg-teal-500/10 p-3 text-xs text-teal-300 flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-teal-400 shrink-0" />
+                <span>{purchaseSuccess}</span>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={purchasing}
+                onClick={() => setPurchaseModalOpen(false)}
+                className="px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-white transition disabled:opacity-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              {Number(user?.balance || 0) >= Number(product.price || 0) && (
+                <button
+                  type="button"
+                  disabled={purchasing || Boolean(purchaseSuccess)}
+                  onClick={handleConfirmPurchase}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#D4AF37] to-amber-500 px-5 py-2.5 text-xs font-bold text-slate-950 transition hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                >
+                  {purchasing ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      <span>Locking in Escrow...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="size-3.5" />
+                      <span>Confirm & Lock in Escrow</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

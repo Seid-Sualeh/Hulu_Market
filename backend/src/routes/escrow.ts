@@ -39,7 +39,7 @@ escrowRouter.post("/order", authenticateToken, async (req: Request, res: Respons
 
     // 1. Fetch channel with row lock to check availability & true price
     const [channelRows] = await conn.query<RowDataPacket[]>(
-      "SELECT id, name, platform, price, seller_id, seller_username, status FROM channels WHERE id = ? FOR UPDATE",
+      "SELECT id, name, platform, listing_type, price, seller_id, seller_username, status FROM channels WHERE id = ? FOR UPDATE",
       [cId]
     );
 
@@ -50,6 +50,17 @@ escrowRouter.post("/order", authenticateToken, async (req: Request, res: Respons
     }
 
     const channel = channelRows[0];
+
+    // Ensure digital products cannot use the social-media channel purchase endpoint
+    if (channel.listing_type === "ebooks-digital") {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: "Social-media purchase endpoint cannot be used for Ebooks & Digital Products. Please use the digital product purchase flow.",
+      });
+      return;
+    }
+
     if (channel.status !== "active") {
       await conn.rollback();
       res.status(400).json({
@@ -152,6 +163,203 @@ escrowRouter.post("/order", authenticateToken, async (req: Request, res: Respons
     await conn.rollback();
     const err = error as Error;
     console.error("[Escrow Order Error]:", err);
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
+/**
+ * POST /api/escrow/order/digital
+ * Buyer initiates an escrow purchase of an approved digital product (ebook, study notes, etc.).
+ * Price, availability, seller copyright declaration, and buyer identity are verified authoritatively against the database.
+ * CRITICAL REUSABLE INVENTORY RULE: The digital product listing remains active and available for other buyers.
+ */
+escrowRouter.post("/order/digital", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
+  try {
+    const { channelId } = req.body;
+
+    // 1. Authenticated buyer identity derived strictly from verified JWT
+    const bId = req.user!.id;
+    if (!bId) {
+      res.status(401).json({ success: false, error: "Please sign in before initiating a purchase." });
+      return;
+    }
+
+    const cId = channelId ? parseInt(String(channelId).replace(/^db-/, ""), 10) : null;
+    if (!cId || isNaN(cId) || cId <= 0) {
+      res.status(400).json({ success: false, error: "A valid digital product listing ID is required." });
+      return;
+    }
+
+    await conn.beginTransaction();
+
+    // 2. Fetch digital product listing with row lock
+    const [channelRows] = await conn.query<RowDataPacket[]>(
+      `SELECT id, name, category, listing_type, subcategory, file_format, price,
+              seller_id, seller_username, agreed_declaration, declared_at, status
+       FROM channels
+       WHERE id = ?
+       FOR UPDATE`,
+      [cId]
+    );
+
+    if (channelRows.length === 0) {
+      await conn.rollback();
+      res.status(404).json({ success: false, error: "Digital product listing not found." });
+      return;
+    }
+
+    const channel = channelRows[0];
+
+    // 3. Category & Listing Type Eligibility
+    if (channel.listing_type !== "ebooks-digital") {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: "This endpoint is exclusively for purchasing Ebooks & Digital Products. Social media channels cannot be purchased here.",
+      });
+      return;
+    }
+
+    // 4. Approval Status Verification
+    if (channel.status !== "active") {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: `This digital product is currently not available for purchase (Status: ${channel.status}).`,
+      });
+      return;
+    }
+
+    // 5. Mandatory Seller Distribution Rights Declaration
+    if (channel.agreed_declaration !== 1 && channel.agreed_declaration !== true) {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: "This listing cannot be purchased because the seller has not completed the mandatory copyright and distribution declaration.",
+      });
+      return;
+    }
+
+    const targetSellerId = Number(channel.seller_id);
+
+    // 6. Prevent self-purchase
+    if (targetSellerId && targetSellerId === bId) {
+      await conn.rollback();
+      res.status(400).json({
+        success: false,
+        error: "You cannot purchase your own digital product listing.",
+      });
+      return;
+    }
+
+    // 7. Verify authoritative price from database
+    const verifiedPrice = Number(channel.price);
+    if (isNaN(verifiedPrice) || verifiedPrice <= 0) {
+      await conn.rollback();
+      res.status(400).json({ success: false, error: "Invalid digital product price in database." });
+      return;
+    }
+
+    // 8. Idempotency & Duplicate Prevention
+    // Prevent double-charging the buyer if they send concurrent requests or double-click
+    const [existingOrders] = await conn.query<RowDataPacket[]>(
+      "SELECT id FROM escrow_orders WHERE channel_id = ? AND buyer_id = ? AND status = 'processing' LIMIT 1 FOR UPDATE",
+      [cId, bId]
+    );
+
+    if (existingOrders.length > 0) {
+      await conn.rollback();
+      res.status(409).json({
+        success: false,
+        error: "You already have an active purchase in progress for this digital product. Please check your Inbox.",
+        orderId: existingOrders[0].id,
+      });
+      return;
+    }
+
+    // 9. Atomic balance check & deduction from buyer wallet
+    const [balanceUpdate] = await conn.query<ResultSetHeader>(
+      "UPDATE users SET balance = balance - ?, locked_balance = locked_balance + ? WHERE id = ? AND balance >= ?",
+      [verifiedPrice, verifiedPrice, bId, verifiedPrice]
+    );
+
+    if (balanceUpdate.affectedRows === 0) {
+      await conn.rollback();
+      const [uRows] = await conn.query<RowDataPacket[]>("SELECT balance FROM users WHERE id = ?", [bId]);
+      const curBal = uRows.length > 0 ? Number(uRows[0].balance) : 0;
+      res.status(400).json({
+        success: false,
+        error: `Insufficient balance. Available: ${curBal} ETB, Product Price: ${verifiedPrice} ETB. Please deposit funds first.`,
+      });
+      return;
+    }
+
+    // 10. CRITICAL BUSINESS RULE: Reusable Digital Inventory
+    // Do NOT set channels.status = 'sold'!
+    // The digital product listing remains active and available for future buyers.
+
+    // 11. Insert distinct escrow order record
+    const actualBuyerName = req.user?.email ? req.user.email.split("@")[0] : `User #${bId}`;
+    const actualSellerName = channel.seller_username || "Verified Seller";
+    const displayPlatform = (channel.file_format || "digital").toUpperCase();
+
+    const [orderResult] = await conn.query<ResultSetHeader>(
+      `INSERT INTO escrow_orders (
+        channel_id, channel_name, platform, listing_type, buyer_id, buyer_name,
+        seller_id, seller_name, amount, status
+      ) VALUES (?, ?, ?, 'ebooks-digital', ?, ?, ?, ?, ?, 'processing')`,
+      [
+        cId,
+        channel.name,
+        displayPlatform,
+        bId,
+        actualBuyerName,
+        targetSellerId,
+        actualSellerName,
+        verifiedPrice,
+      ]
+    );
+
+    const orderId = orderResult.insertId;
+
+    // 12. Insert initial transaction chat message
+    await conn.query(
+      `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message)
+       VALUES (?, 0, 'Hulu Escrow Bot', 'admin', ?)`,
+      [
+        orderId,
+        `Welcome to Hulu Market Escrow Protection! The buyer's payment of ${verifiedPrice} ETB is safely locked in escrow for "${channel.name}". This transaction is supervised by Hulu Admin. Please coordinate in this chat.`,
+      ]
+    );
+
+    // 13. Notify seller
+    if (targetSellerId) {
+      try {
+        await conn.query(
+          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+           VALUES (?, 'escrow', 'New Digital Product Purchase! 🎉', ?, '/inbox', 'Open Trade Chat')`,
+          [
+            targetSellerId,
+            `A buyer has purchased your digital product "${channel.name}" for ${verifiedPrice} ETB. The payment is held in escrow. Please open your Inbox to coordinate with the buyer.`,
+          ]
+        );
+      } catch {}
+    }
+
+    await conn.commit();
+
+    res.status(201).json({
+      success: true,
+      message: "Digital product purchase initiated successfully. Funds are held in escrow.",
+      orderId,
+    });
+  } catch (error: unknown) {
+    await conn.rollback();
+    const err = error as Error;
+    console.error("[Digital Purchase Error]:", err);
     res.status(500).json({ success: false, error: err.message });
   } finally {
     conn.release();
@@ -511,9 +719,16 @@ escrowRouter.patch("/orders/:id/action", requireAdmin, async (req: Request, res:
         );
       }
 
-      // 2. Mark channel as sold
+      // 2. Mark channel as sold ONLY for social-media channels. Digital products remain active reusable inventory!
       if (order.channel_id) {
-        await conn.query("UPDATE channels SET status = 'sold' WHERE id = ?", [order.channel_id]);
+        const [chRows] = await conn.query<RowDataPacket[]>(
+          "SELECT listing_type FROM channels WHERE id = ? LIMIT 1",
+          [order.channel_id]
+        );
+        const isDigital = chRows.length > 0 && chRows[0].listing_type === "ebooks-digital";
+        if (!isDigital) {
+          await conn.query("UPDATE channels SET status = 'sold' WHERE id = ?", [order.channel_id]);
+        }
       }
 
       // 3. Mark order as success
@@ -542,9 +757,16 @@ escrowRouter.patch("/orders/:id/action", requireAdmin, async (req: Request, res:
         [order.amount, order.amount, order.buyer_id]
       );
 
-      // 2. Mark channel back to active
+      // 2. Mark channel back to active if social-media
       if (order.channel_id) {
-        await conn.query("UPDATE channels SET status = 'active' WHERE id = ?", [order.channel_id]);
+        const [chRows] = await conn.query<RowDataPacket[]>(
+          "SELECT listing_type FROM channels WHERE id = ? LIMIT 1",
+          [order.channel_id]
+        );
+        const isDigital = chRows.length > 0 && chRows[0].listing_type === "ebooks-digital";
+        if (!isDigital) {
+          await conn.query("UPDATE channels SET status = 'active' WHERE id = ?", [order.channel_id]);
+        }
       }
 
       // 3. Mark order as cancelled
@@ -803,9 +1025,16 @@ escrowRouter.patch("/orders/:id/close", requireAdmin, async (req: Request, res: 
       );
     }
 
-    // Mark channel as sold
+    // Mark channel as sold ONLY for social-media channels. Digital products remain active reusable inventory!
     if (order.channel_id) {
-      await conn.query("UPDATE channels SET status = 'sold' WHERE id = ?", [order.channel_id]);
+      const [chRows] = await conn.query<RowDataPacket[]>(
+        "SELECT listing_type FROM channels WHERE id = ? LIMIT 1",
+        [order.channel_id]
+      );
+      const isDigital = chRows.length > 0 && chRows[0].listing_type === "ebooks-digital";
+      if (!isDigital) {
+        await conn.query("UPDATE channels SET status = 'sold' WHERE id = ?", [order.channel_id]);
+      }
     }
 
     // Post final closure message

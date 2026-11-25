@@ -282,6 +282,7 @@ export async function initDatabase(): Promise<boolean> {
         channel_id INT,
         channel_name VARCHAR(255) NOT NULL,
         platform VARCHAR(50) NOT NULL,
+        listing_type VARCHAR(50) NOT NULL DEFAULT 'social-media',
         buyer_id INT NOT NULL,
         buyer_name VARCHAR(150),
         seller_id INT,
@@ -302,6 +303,7 @@ export async function initDatabase(): Promise<boolean> {
     `);
 
     // Migrate: add new columns if table already existed
+    await safeAddColumn(conn, "escrow_orders", "listing_type", "VARCHAR(50) NOT NULL DEFAULT 'social-media'");
     await safeAddColumn(conn, "escrow_orders", "buyer_confirmed", "BOOLEAN NOT NULL DEFAULT FALSE");
     await safeAddColumn(conn, "escrow_orders", "seller_confirmed", "BOOLEAN NOT NULL DEFAULT FALSE");
     await safeAddColumn(conn, "escrow_orders", "buyer_confirmation_requested", "BOOLEAN NOT NULL DEFAULT FALSE");
