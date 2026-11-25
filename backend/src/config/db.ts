@@ -141,6 +141,38 @@ async function safeModifyColumn(
 }
 
 /**
+ * Safely adds a non-unique index to a table if an index with that name does not already exist.
+ * Compatible across MySQL 5.7, 8.0, Aiven MySQL, and MariaDB.
+ */
+async function safeAddIndex(
+  conn: PoolConnection,
+  tableName: string,
+  indexName: string,
+  columnsClause: string
+): Promise<void> {
+  try {
+    const [rows] = await conn.query<RowDataPacket[]>(
+      `SELECT INDEX_NAME
+       FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+       LIMIT 1`,
+      [tableName, indexName]
+    );
+    if (rows.length === 0) {
+      await conn.query(`ALTER TABLE \`${tableName}\` ADD INDEX \`${indexName}\` (${columnsClause})`);
+      console.log(`[Database Migration] Added index ${indexName} on ${tableName} (${columnsClause})`);
+    }
+  } catch (err: unknown) {
+    const error = err as Error;
+    if ((error as any).code === "ER_DUP_KEYNAME" || error.message?.includes("Duplicate key name")) {
+      console.debug(`[Database Migration Note] Index ${indexName} on ${tableName} already present.`);
+    } else {
+      console.error(`[Database Migration Error] Failed to add index ${indexName} on ${tableName}:`, error.message);
+    }
+  }
+}
+
+/**
  * Initializes the MySQL database and ensures all core tables exist.
  */
 export async function initDatabase(): Promise<boolean> {
@@ -298,7 +330,8 @@ export async function initDatabase(): Promise<boolean> {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_escrow_buyer (buyer_id),
         INDEX idx_escrow_seller (seller_id),
-        INDEX idx_escrow_status (status)
+        INDEX idx_escrow_status (status),
+        INDEX idx_escrow_channel_buyer_status (channel_id, buyer_id, status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
@@ -309,6 +342,7 @@ export async function initDatabase(): Promise<boolean> {
     await safeAddColumn(conn, "escrow_orders", "buyer_confirmation_requested", "BOOLEAN NOT NULL DEFAULT FALSE");
     await safeAddColumn(conn, "escrow_orders", "is_closed", "BOOLEAN NOT NULL DEFAULT FALSE");
     await safeAddColumn(conn, "escrow_orders", "closed_at", "TIMESTAMP NULL");
+    await safeAddIndex(conn, "escrow_orders", "idx_escrow_channel_buyer_status", "`channel_id`, `buyer_id`, `status`");
 
     // 5. Escrow Chat Messages (Supervised by Admin, Seller, and Buyer)
     await conn.query(`
@@ -430,6 +464,51 @@ export async function initDatabase(): Promise<boolean> {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_fsc_status (status),
         INDEX idx_fsc_key (storage_key)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 11. Digital Order Deliveries (Feature 8: Seller file delivery per escrow order)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS digital_order_deliveries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        listing_id INT NOT NULL,
+        seller_id INT NOT NULL,
+        buyer_id INT NOT NULL,
+        file_count INT NOT NULL DEFAULT 0,
+        delivery_note TEXT NULL,
+        status ENUM('delivered', 'revoked') NOT NULL DEFAULT 'delivered',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_dod_order (order_id),
+        INDEX idx_dod_seller (seller_id),
+        INDEX idx_dod_buyer (buyer_id),
+        INDEX idx_dod_listing (listing_id),
+        CONSTRAINT fk_dod_order FOREIGN KEY (order_id) REFERENCES escrow_orders(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 12. Digital Order Delivery Files (Private storage metadata for delivered files)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS digital_order_delivery_files (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        delivery_id INT NOT NULL,
+        order_id INT NOT NULL,
+        listing_id INT NOT NULL,
+        seller_id INT NOT NULL,
+        original_filename VARCHAR(255) NOT NULL,
+        file_format VARCHAR(32) NOT NULL,
+        mime_type VARCHAR(128) NOT NULL,
+        file_size_bytes BIGINT NOT NULL,
+        storage_key VARCHAR(255) NOT NULL,
+        checksum_sha256 VARCHAR(64) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_dodf_storage_key (storage_key),
+        INDEX idx_dodf_delivery (delivery_id),
+        INDEX idx_dodf_order (order_id),
+        INDEX idx_dodf_seller (seller_id),
+        CONSTRAINT fk_dodf_delivery FOREIGN KEY (delivery_id) REFERENCES digital_order_deliveries(id) ON DELETE CASCADE,
+        CONSTRAINT fk_dodf_order FOREIGN KEY (order_id) REFERENCES escrow_orders(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 

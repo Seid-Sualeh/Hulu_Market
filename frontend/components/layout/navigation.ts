@@ -70,6 +70,12 @@ export const navigationSections: {
           },
           {
             type: "link",
+            label: "Ebooks & Digital Products",
+            href: "/digital-products",
+            icon: BookOpen,
+          },
+          {
+            type: "link",
             label: "Houses & Properties",
             href: "/houses-properties",
             icon: House,
@@ -86,12 +92,7 @@ export const navigationSections: {
             href: "/electronics",
             icon: Monitor,
           },
-          {
-            type: "link",
-            label: "Ebooks & Digital Products",
-            href: "/digital-products",
-            icon: BookOpen,
-          },
+
           {
             type: "link",
             label: "Educational Videos",

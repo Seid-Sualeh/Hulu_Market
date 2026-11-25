@@ -12,6 +12,7 @@ import { channelsRouter } from "./routes/channels.js";
 import { digitalFilesRouter } from "./routes/digitalFiles.js";
 import { userRouter } from "./routes/user.js";
 import { escrowRouter } from "./routes/escrow.js";
+import { escrowDeliveriesRouter } from "./routes/escrowDeliveries.js";
 import { uploadRouter } from "./routes/upload.js";
 import { getJwtSecret } from "./middleware/auth.js";
 
@@ -154,6 +155,10 @@ export function createApp(frontendOrigin?: string) {
   // Mount User stats & profile routes
   app.use("/user", userRouter);
   app.use("/api/user", userRouter);
+
+  // Mount Escrow digital delivery routes
+  app.use("/escrow", escrowDeliveriesRouter);
+  app.use("/api/escrow", escrowDeliveriesRouter);
 
   // Mount Escrow routes (P2P orders, buyer-seller chat supervised by admin)
   app.use("/escrow", escrowRouter);

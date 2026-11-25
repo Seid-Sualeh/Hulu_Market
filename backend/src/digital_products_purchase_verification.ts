@@ -1,7 +1,7 @@
 import http from "http";
 import jwt from "jsonwebtoken";
 import { createApp } from "./app.js";
-import { pool } from "./config/db.js";
+import { pool, initDatabase } from "./config/db.js";
 import { getJwtSecret } from "./middleware/auth.js";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 
@@ -37,6 +37,8 @@ async function runPurchaseVerification() {
   const buyerAEmail = `buyerA_f7_${timestamp}@test.et`;
   const buyerBEmail = `buyerB_f7_${timestamp}@test.et`;
   const buyerCEmail = `buyerC_f7_${timestamp}@test.et`;
+  const buyerDEmail = `buyerD_f7_${timestamp}@test.et`;
+  const buyerEEmail = `buyerE_f7_${timestamp}@test.et`;
   const outsiderEmail = `outsider_f7_${timestamp}@test.et`;
 
   let adminId = 0;
@@ -44,6 +46,8 @@ async function runPurchaseVerification() {
   let buyerAId = 0;
   let buyerBId = 0;
   let buyerCId = 0;
+  let buyerDId = 0;
+  let buyerEId = 0;
   let outsiderId = 0;
 
   let activeDigitalChannelId = 0;
@@ -56,6 +60,24 @@ async function runPurchaseVerification() {
   let orderId2 = 0;
 
   try {
+    // 1.5 Verify repeatable DB initialization & composite index (F7-01)
+    await initDatabase();
+    await initDatabase();
+    const [idxRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COLUMN_NAME, SEQ_IN_INDEX, NON_UNIQUE
+       FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'escrow_orders' AND INDEX_NAME = 'idx_escrow_channel_buyer_status'
+       ORDER BY SEQ_IN_INDEX ASC`
+    );
+    assert(
+      idxRows.length === 3 &&
+        idxRows[0].COLUMN_NAME === "channel_id" &&
+        idxRows[1].COLUMN_NAME === "buyer_id" &&
+        idxRows[2].COLUMN_NAME === "status" &&
+        Number(idxRows[0].NON_UNIQUE) === 1,
+      "Test 0: Repeatable migration created non-unique composite index idx_escrow_channel_buyer_status(channel_id, buyer_id, status)"
+    );
+
     // 2. Create Test Users
     const [adminRes] = await pool.query<ResultSetHeader>(
       `INSERT INTO users (email, phone, password_hash, first_name, last_name, role, balance, locked_balance)
@@ -92,9 +114,23 @@ async function runPurchaseVerification() {
     );
     buyerCId = buyerCRes.insertId;
 
+    const [buyerDRes] = await pool.query<ResultSetHeader>(
+      `INSERT INTO users (email, phone, password_hash, first_name, last_name, role, balance, locked_balance)
+       VALUES (?, '+251911000007', 'hashed_pass', 'Buyer', 'Delta', 'user', 1000.00, 0)`,
+      [buyerDEmail]
+    );
+    buyerDId = buyerDRes.insertId;
+
+    const [buyerERes] = await pool.query<ResultSetHeader>(
+      `INSERT INTO users (email, phone, password_hash, first_name, last_name, role, balance, locked_balance)
+       VALUES (?, '+251911000008', 'hashed_pass', 'Buyer', 'Epsilon', 'user', 1000.00, 0)`,
+      [buyerEEmail]
+    );
+    buyerEId = buyerERes.insertId;
+
     const [outsiderRes] = await pool.query<ResultSetHeader>(
       `INSERT INTO users (email, phone, password_hash, first_name, last_name, role, balance, locked_balance)
-       VALUES (?, '+251911000006', 'hashed_pass', 'Outsider', 'ThirdParty', 'user', 500.00, 0)`,
+       VALUES (?, '+251911000006', 'hashed_pass', 'Outsider', 'ThirdParty', 'user', 1500.00, 0)`,
       [outsiderEmail]
     );
     outsiderId = outsiderRes.insertId;
@@ -105,6 +141,8 @@ async function runPurchaseVerification() {
     const buyerAToken = jwt.sign({ id: buyerAId, email: buyerAEmail, role: "user" }, JWT_SECRET);
     const buyerBToken = jwt.sign({ id: buyerBId, email: buyerBEmail, role: "user" }, JWT_SECRET);
     const buyerCToken = jwt.sign({ id: buyerCId, email: buyerCEmail, role: "user" }, JWT_SECRET);
+    const buyerDToken = jwt.sign({ id: buyerDId, email: buyerDEmail, role: "user" }, JWT_SECRET);
+    const buyerEToken = jwt.sign({ id: buyerEId, email: buyerEEmail, role: "user" }, JWT_SECRET);
     const outsiderToken = jwt.sign({ id: outsiderId, email: outsiderEmail, role: "user" }, JWT_SECRET);
 
     // 3. Create Test Listings
@@ -431,6 +469,109 @@ async function runPurchaseVerification() {
       "Test 15: Repeat purchase by Buyer A allowed after previous trade completed; new distinct order created"
     );
 
+    // TEST 16: Digital product confirmation message wording (F7-02)
+    const t16a = await apiRequest(`/api/escrow/orders/${orderId2}/confirm`, {
+      method: "PATCH",
+      token: buyerBToken,
+      body: { role: "buyer" },
+    });
+    const t16b = await apiRequest(`/api/escrow/orders/${orderId2}/confirm`, {
+      method: "PATCH",
+      token: sellerToken,
+      body: { role: "seller" },
+    });
+    assert(
+      t16a.status === 200 && t16b.status === 200,
+      "Test 16.1: Buyer and seller confirmations recorded for digital order"
+    );
+
+    const [confirmMsgs] = await pool.query<RowDataPacket[]>(
+      "SELECT message FROM escrow_messages WHERE order_id = ? ORDER BY id ASC",
+      [orderId2]
+    );
+    const confirmText = confirmMsgs.map((m) => m.message).join("\n");
+    assert(
+      confirmText.includes("receipt of the digital product") &&
+        confirmText.includes("digital product delivery") &&
+        !confirmText.includes("channel ownership") &&
+        !confirmText.includes("ownership transfer"),
+      "Test 16.2: Automated confirmation messages use digital product terminology instead of channel ownership"
+    );
+
+    // TEST 17: Cancelled order refunds buyer and allows future repurchase (F7-03)
+    const t17a = await apiRequest(`/api/escrow/orders/${orderId2}/action`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { action: "cancel", adminNotes: "Test cancellation" },
+    });
+    assert(t17a.status === 200 && t17a.data?.success, "Test 17.1: Admin cancels Order 2 with 200 OK");
+
+    const [uRowsBCancelled] = await pool.query<RowDataPacket[]>(
+      "SELECT balance, locked_balance FROM users WHERE id = ?",
+      [buyerBId]
+    );
+    assert(
+      Number(uRowsBCancelled[0].balance) === 1000 && Number(uRowsBCancelled[0].locked_balance) === 0,
+      "Test 17.2: Buyer B refunded 300 ETB (balance=1000, locked_balance=0)"
+    );
+
+    const t17b = await apiRequest("/api/escrow/order/digital", {
+      method: "POST",
+      token: buyerBToken,
+      body: { channelId: activeDigitalChannelId },
+    });
+    assert(
+      t17b.status === 201 && t17b.data?.orderId > 0 && t17b.data?.orderId !== orderId2,
+      "Test 17.3: Repurchase by Buyer B permitted after prior order cancellation"
+    );
+
+    // TEST 18: Simultaneous same-buyer concurrency protection (F7-03)
+    const sameBuyerAttempts = await Promise.all([
+      apiRequest("/api/escrow/order/digital", { method: "POST", token: outsiderToken, body: { channelId: activeDigitalChannelId } }),
+      apiRequest("/api/escrow/order/digital", { method: "POST", token: outsiderToken, body: { channelId: activeDigitalChannelId } }),
+      apiRequest("/api/escrow/order/digital", { method: "POST", token: outsiderToken, body: { channelId: activeDigitalChannelId } }),
+      apiRequest("/api/escrow/order/digital", { method: "POST", token: outsiderToken, body: { channelId: activeDigitalChannelId } }),
+      apiRequest("/api/escrow/order/digital", { method: "POST", token: outsiderToken, body: { channelId: activeDigitalChannelId } }),
+    ]);
+    const createdCount = sameBuyerAttempts.filter((r) => r.status === 201).length;
+    const conflictCount = sameBuyerAttempts.filter((r) => r.status === 409).length;
+    assert(
+      createdCount === 1 && conflictCount === 4,
+      `Test 18.1: 5 simultaneous same-buyer requests yielded 1 x 201 and 4 x 409 (got 201=${createdCount}, 409=${conflictCount})`
+    );
+
+    const [outsiderBal] = await pool.query<RowDataPacket[]>(
+      "SELECT balance, locked_balance FROM users WHERE id = ?",
+      [outsiderId]
+    );
+    assert(
+      Number(outsiderBal[0].balance) === 1200 && Number(outsiderBal[0].locked_balance) === 300,
+      "Test 18.2: Simultaneous same-buyer requests charged wallet exactly once (balance=1200, locked_balance=300)"
+    );
+
+    // TEST 19: Simultaneous multi-buyer concurrency on reusable listing (F7-03)
+    const [concurrentD, concurrentE] = await Promise.all([
+      apiRequest("/api/escrow/order/digital", { method: "POST", token: buyerDToken, body: { channelId: activeDigitalChannelId } }),
+      apiRequest("/api/escrow/order/digital", { method: "POST", token: buyerEToken, body: { channelId: activeDigitalChannelId } }),
+    ]);
+    assert(
+      concurrentD.status === 201 &&
+        concurrentE.status === 201 &&
+        concurrentD.data?.orderId > 0 &&
+        concurrentE.data?.orderId > 0 &&
+        concurrentD.data?.orderId !== concurrentE.data?.orderId,
+      "Test 19.1: Two distinct buyers purchased same reusable listing concurrently without conflicts"
+    );
+
+    const [chRowsConcurrent] = await pool.query<RowDataPacket[]>(
+      "SELECT status FROM channels WHERE id = ?",
+      [activeDigitalChannelId]
+    );
+    assert(
+      chRowsConcurrent[0].status === "active",
+      "Test 19.2: Reusable listing remains 'active' after concurrent multi-buyer purchases"
+    );
+
   } catch (error: any) {
     console.error("[FATAL ERROR IN TEST RUNNER]:", error);
     failed++;
@@ -446,7 +587,7 @@ async function runPurchaseVerification() {
         socialMediaChannelId,
       ].filter(Boolean);
 
-      const userIds = [adminId, sellerId, buyerAId, buyerBId, buyerCId, outsiderId].filter(Boolean);
+      const userIds = [adminId, sellerId, buyerAId, buyerBId, buyerCId, buyerDId, buyerEId, outsiderId].filter(Boolean);
 
       if (channelIds.length > 0) {
         // Delete messages
@@ -469,6 +610,7 @@ async function runPurchaseVerification() {
     }
 
     server.close();
+    await pool.end();
   }
 
   console.log("\n=== FEATURE 7 VERIFICATION RESULTS ===");

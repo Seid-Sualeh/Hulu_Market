@@ -928,9 +928,13 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
     const field = role === "buyer" ? "buyer_confirmed" : "seller_confirmed";
     await pool.query(`UPDATE escrow_orders SET ${field} = TRUE WHERE id = ?`, [orderId]);
 
-    // Post automated confirmation message
-    const confirmMsg =
-      role === "buyer"
+    // Post automated confirmation message (tailored by listing_type)
+    const isDigitalOrder = order.listing_type === "ebooks-digital";
+    const confirmMsg = isDigitalOrder
+      ? role === "buyer"
+        ? "✅ Buyer has confirmed successful receipt of the digital product. Waiting for seller confirmation..."
+        : "✅ Seller has confirmed the digital product delivery is complete. Waiting for buyer confirmation..."
+      : role === "buyer"
         ? "✅ Buyer has confirmed successful receipt of the channel ownership. Waiting for seller confirmation..."
         : "✅ Seller has confirmed the ownership transfer is complete. Waiting for buyer confirmation...";
 

@@ -9,11 +9,13 @@ import {
   CheckCircle2,
   ExternalLink,
   Eye,
+  FileText,
   Image as ImageIcon,
   Inbox as InboxIcon,
   Lock,
   MessageSquare,
   Mic,
+  PackageCheck,
   Pin,
   Search,
   Send,
@@ -22,6 +24,8 @@ import {
   ShoppingBag,
   Sparkles,
   Square,
+  Trash2,
+  Upload,
   User,
   Volume2,
   X,
@@ -36,6 +40,7 @@ interface P2POrder {
   id: number;
   channelName: string;
   platform: string;
+  listingType: string;
   price: string;
   seller: string;
   buyer: string;
@@ -47,6 +52,27 @@ interface P2POrder {
   isClosed: boolean;
   closedAt: string | null;
   createdAt: string;
+}
+
+interface DeliveryFileMeta {
+  id: number;
+  original_filename: string;
+  file_format: string;
+  mime_type: string;
+  file_size_bytes: number;
+  checksum_sha256: string;
+  created_at: string;
+}
+
+interface DigitalDeliveryBatch {
+  id: number;
+  order_id: number;
+  listing_id: number;
+  file_count: number;
+  delivery_note: string | null;
+  status: "delivered" | "revoked";
+  created_at: string;
+  files: DeliveryFileMeta[];
 }
 
 interface EscrowMessage {
@@ -93,6 +119,17 @@ export default function InboxPage() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
 
+  // Digital product seller delivery (Feature 8)
+  const deliveryInputRef = useRef<HTMLInputElement>(null);
+  const [orderDeliveries, setOrderDeliveries] = useState<DigitalDeliveryBatch[]>([]);
+  const [loadingDeliveries, setLoadingDeliveries] = useState(false);
+  const [selectedDeliveryFiles, setSelectedDeliveryFiles] = useState<File[]>([]);
+  const [deliveryNote, setDeliveryNote] = useState("");
+  const [deliveringFiles, setDeliveringFiles] = useState(false);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [deliverySuccess, setDeliverySuccess] = useState<string | null>(null);
+  const [deliveryPanelOpen, setDeliveryPanelOpen] = useState(false);
+
   // Participants online status (for escrow order chat header)
   const [participantsStatus, setParticipantsStatus] = useState<{
     buyer: { isOnline: boolean; label: string } | null;
@@ -138,6 +175,7 @@ export default function InboxPage() {
           id: o.id,
           channelName: o.channel_name,
           platform: o.platform,
+          listingType: o.listing_type || "social-media",
           price: `${Number(o.amount).toLocaleString()} ETB`,
           seller: o.seller_name || "Seller",
           buyer: o.buyer_name || "Buyer",
@@ -183,11 +221,101 @@ export default function InboxPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [orderMessages]);
 
+  const formatBytes = (bytes: number) => {
+    if (!bytes || isNaN(bytes)) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const fetchDeliveries = async (orderId: number) => {
+    setLoadingDeliveries(true);
+    try {
+      const res = await fetchBackend(`escrow/orders/${orderId}/deliveries`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.deliveries)) {
+        setOrderDeliveries(data.deliveries);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setLoadingDeliveries(false);
+    }
+  };
+
+  const handleDeliveryFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const filesArray = Array.from(e.target.files);
+    setSelectedDeliveryFiles((prev) => {
+      const combined = [...prev, ...filesArray];
+      return combined.slice(0, 5); // max 5 files
+    });
+    setDeliveryError(null);
+    setDeliverySuccess(null);
+  };
+
+  const handleRemoveDeliveryFile = (index: number) => {
+    setSelectedDeliveryFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmitDelivery = async () => {
+    if (!selectedOrder || selectedDeliveryFiles.length === 0) return;
+    setDeliveringFiles(true);
+    setDeliveryError(null);
+    setDeliverySuccess(null);
+
+    try {
+      const formData = new FormData();
+      selectedDeliveryFiles.forEach((f) => formData.append("files", f));
+      if (deliveryNote.trim()) {
+        formData.append("deliveryNote", deliveryNote.trim());
+      }
+
+      const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/deliveries`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setDeliverySuccess(`Delivered ${data.delivery?.file_count || selectedDeliveryFiles.length} file(s) successfully!`);
+        setSelectedDeliveryFiles([]);
+        setDeliveryNote("");
+        setDeliveryPanelOpen(false);
+        // Refresh deliveries and chat messages
+        fetchDeliveries(selectedOrder.id);
+        const msgRes = await fetchBackend(`escrow/orders/${selectedOrder.id}/messages`);
+        const msgData = await msgRes.json();
+        if (msgData.success && Array.isArray(msgData.messages)) {
+          setOrderMessages(msgData.messages);
+        }
+      } else {
+        setDeliveryError(data.error || "Failed to deliver files.");
+      }
+    } catch {
+      setDeliveryError("Network error while uploading delivery files.");
+    } finally {
+      setDeliveringFiles(false);
+    }
+  };
+
   const openOrderChat = async (order: P2POrder) => {
     setSelectedOrder(order);
     setLoadingMessages(true);
     setOrderChatInput("");
     setParticipantsStatus(null);
+    setSelectedDeliveryFiles([]);
+    setDeliveryNote("");
+    setDeliveryError(null);
+    setDeliverySuccess(null);
+    setDeliveryPanelOpen(false);
+
+    if (order.listingType === "ebooks-digital") {
+      fetchDeliveries(order.id);
+    } else {
+      setOrderDeliveries([]);
+    }
+
     try {
       const res = await fetchBackend(`escrow/orders/${order.id}/messages`);
       const data = await res.json();
@@ -410,6 +538,14 @@ export default function InboxPage() {
         const data = await res.json();
         if (data.success && Array.isArray(data.messages)) {
           setOrderMessages(data.messages);
+        }
+        // Also refresh deliveries if digital
+        if (selectedOrder.listingType === "ebooks-digital") {
+          const delivRes = await fetchBackend(`escrow/orders/${selectedOrder.id}/deliveries`);
+          const delivData = await delivRes.json();
+          if (delivData.success && Array.isArray(delivData.deliveries)) {
+            setOrderDeliveries(delivData.deliveries);
+          }
         }
         // Also refresh order state
         const orderRes = await fetchBackend(`escrow/orders?userId=${user?.id}`);
@@ -710,7 +846,9 @@ export default function InboxPage() {
                   <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
                   <p className="text-[11px] text-slate-200">
                     <span className="font-bold text-emerald-400">Admin instruction: </span>
-                    If you have received channel ownership and verified everything, click Mark as Complete.
+                    {selectedOrder.listingType === "ebooks-digital"
+                      ? "Once you have received and verified the digital product files, click Mark as Complete."
+                      : "If you have received channel ownership and verified everything, click Mark as Complete."}
                   </p>
                 </div>
                 <button
@@ -745,7 +883,9 @@ export default function InboxPage() {
                   <CheckCircle2 size={15} className="text-cyan-400 shrink-0" />
                   <p className="text-[11px] text-slate-200">
                     <span className="font-bold text-cyan-400">Seller instruction: </span>
-                    Transferred credentials and ownership to buyer? Click Confirm Transfer.
+                    {selectedOrder.listingType === "ebooks-digital"
+                      ? "Delivered all digital product files to buyer? Click Confirm Delivery."
+                      : "Transferred credentials and ownership to buyer? Click Confirm Transfer."}
                   </p>
                 </div>
                 <button
@@ -755,7 +895,7 @@ export default function InboxPage() {
                   className="shrink-0 flex items-center gap-1.5 rounded-xl bg-cyan-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-cyan-300 active:scale-95 disabled:opacity-60 transition shadow-md shadow-cyan-500/20"
                 >
                   <CheckCircle2 size={13} className="text-slate-950" />
-                  <span>{confirmingCompletion ? "Confirming..." : "Confirm Transfer"}</span>
+                  <span>{confirmingCompletion ? "Confirming..." : selectedOrder.listingType === "ebooks-digital" ? "Confirm Delivery" : "Confirm Transfer"}</span>
                 </button>
               </div>
             )}
@@ -765,7 +905,7 @@ export default function InboxPage() {
               <div className="shrink-0 flex items-center gap-2 border-b border-emerald-500/20 bg-emerald-950/20 px-4 py-2 text-[11px] text-emerald-400">
                 <CheckCircle2 size={13} className="shrink-0" />
                 <span>
-                  You confirmed transfer.{" "}
+                  {selectedOrder.listingType === "ebooks-digital" ? "You confirmed delivery. " : "You confirmed transfer. "}
                   {selectedOrder.buyerConfirmed
                     ? "Buyer confirmed ✓ — Admin will finalize."
                     : "Waiting for buyer to verify..."}
@@ -778,6 +918,176 @@ export default function InboxPage() {
               <div className="shrink-0 flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-[11px] text-amber-300 font-semibold">
                 <Sparkles size={13} className="text-amber-400 shrink-0" />
                 <span>Both parties confirmed! Admin will finalize and release payment.</span>
+              </div>
+            )}
+
+            {/* Digital Product: Seller File Delivery Upload Interface (Feature 8) */}
+            {!selectedOrder.isClosed && selectedOrder.status === "processing" && isSeller(selectedOrder) && selectedOrder.listingType === "ebooks-digital" && (
+              <div className="shrink-0 border-b border-amber-500/30 bg-[#0d131f] p-3 sm:px-4 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <PackageCheck className="size-4 text-[#D4AF37] shrink-0" />
+                    <div>
+                      <span className="text-xs font-bold text-white block">Seller File Delivery</span>
+                      <span className="text-[11px] text-slate-400">
+                        Upload digital product files to deliver them securely to the buyer in this trade.
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryPanelOpen((prev) => !prev)}
+                    className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-[#D4AF37]/40 bg-[#D4AF37]/10 px-3 py-1.5 text-xs font-bold text-[#D4AF37] hover:bg-[#D4AF37]/20 transition"
+                  >
+                    <Upload size={13} />
+                    <span>{deliveryPanelOpen ? "Close Delivery Form" : "Deliver Files"}</span>
+                  </button>
+                </div>
+
+                {deliveryPanelOpen && (
+                  <div className="pt-2 border-t border-white/5 space-y-3">
+                    <input
+                      ref={deliveryInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={handleDeliveryFilesSelected}
+                    />
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={deliveringFiles || selectedDeliveryFiles.length >= 5}
+                        onClick={() => deliveryInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-white/20 bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-amber-400 hover:text-white transition disabled:opacity-50"
+                      >
+                        <Upload size={13} className="text-amber-400" />
+                        <span>Select Files ({selectedDeliveryFiles.length}/5)</span>
+                      </button>
+                      <span className="text-[10px] text-slate-500">
+                        PDF, EPUB, ZIP, DOCX, etc. (max 5 files, 50MB each)
+                      </span>
+                    </div>
+
+                    {selectedDeliveryFiles.length > 0 && (
+                      <div className="space-y-1.5 rounded-xl border border-white/5 bg-[#121722] p-2.5">
+                        {selectedDeliveryFiles.map((file, idx) => (
+                          <div key={idx} className="flex items-center justify-between gap-2 text-xs py-1 px-2 rounded-lg bg-white/[0.02]">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText size={13} className="text-amber-400 shrink-0" />
+                              <span className="font-medium text-slate-200 truncate">{file.name}</span>
+                              <span className="text-[10px] text-slate-500 shrink-0">({formatBytes(file.size)})</span>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={deliveringFiles}
+                              onClick={() => handleRemoveDeliveryFile(idx)}
+                              className="text-slate-500 hover:text-rose-400 transition shrink-0"
+                              title="Remove"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div>
+                      <input
+                        type="text"
+                        value={deliveryNote}
+                        onChange={(e) => setDeliveryNote(e.target.value)}
+                        disabled={deliveringFiles}
+                        placeholder="Optional delivery note or instructions for the buyer..."
+                        className="w-full rounded-xl border border-white/10 bg-[#0c1017] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none"
+                        maxLength={500}
+                      />
+                    </div>
+
+                    {deliveryError && (
+                      <div className="flex items-center gap-1.5 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-lg">
+                        <AlertCircle size={13} className="shrink-0" />
+                        <span>{deliveryError}</span>
+                      </div>
+                    )}
+                    {deliverySuccess && (
+                      <div className="flex items-center gap-1.5 text-xs text-teal-300 bg-teal-500/10 border border-teal-500/20 px-3 py-1.5 rounded-lg">
+                        <CheckCircle2 size={13} className="shrink-0" />
+                        <span>{deliverySuccess}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        disabled={deliveringFiles}
+                        onClick={() => {
+                          setSelectedDeliveryFiles([]);
+                          setDeliveryNote("");
+                          setDeliveryError(null);
+                          setDeliveryPanelOpen(false);
+                        }}
+                        className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deliveringFiles || selectedDeliveryFiles.length === 0}
+                        onClick={handleSubmitDelivery}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-amber-500 px-4 py-1.5 text-xs font-bold text-slate-950 hover:brightness-110 active:scale-95 disabled:opacity-50 transition shadow-md shadow-amber-950/30"
+                      >
+                        <PackageCheck size={13} />
+                        <span>{deliveringFiles ? "Uploading & Delivering..." : `Deliver ${selectedDeliveryFiles.length} File(s)`}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Delivered Files Summary for Digital Product Trades */}
+            {selectedOrder.listingType === "ebooks-digital" && orderDeliveries.length > 0 && (
+              <div className="shrink-0 border-b border-teal-500/20 bg-teal-950/20 px-4 py-2.5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-teal-300 flex items-center gap-1.5">
+                    <PackageCheck size={14} className="text-teal-400" />
+                    <span>Delivered Files ({orderDeliveries.reduce((sum, d) => sum + d.files.length, 0)} total)</span>
+                  </span>
+                  <span className="text-[10px] text-teal-400/80 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-full font-semibold">
+                    Delivered • Awaiting Buyer Verification
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  {orderDeliveries.map((delivery) => (
+                    <div key={delivery.id} className="space-y-1">
+                      {delivery.files.map((file) => (
+                        <div
+                          key={file.id}
+                          className="flex items-center justify-between gap-2 rounded-lg bg-black/20 border border-white/5 px-2.5 py-1 text-xs"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText size={12} className="text-[#D4AF37] shrink-0" />
+                            <span className="text-slate-200 font-medium truncate">{file.original_filename}</span>
+                            <span className="text-[10px] text-slate-500 shrink-0">({formatBytes(file.file_size_bytes)})</span>
+                          </div>
+                          <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">
+                            {file.file_format}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Digital Order Waiting Banner for Buyer */}
+            {selectedOrder.listingType === "ebooks-digital" && orderDeliveries.length === 0 && isBuyer(selectedOrder) && (
+              <div className="shrink-0 border-b border-white/[0.05] bg-[#0c1017]/60 px-4 py-2 text-[11px] text-slate-400 flex items-center gap-2">
+                <PackageCheck size={13} className="text-[#D4AF37]" />
+                <span>Waiting for seller to deliver the digital product files in this trade...</span>
               </div>
             )}
 
@@ -972,6 +1282,23 @@ export default function InboxPage() {
                   >
                     {isRecording ? <Square size={14} className="fill-rose-400" /> : <Mic size={16} />}
                   </button>
+
+                  {/* digital file delivery button (seller only for digital products) */}
+                  {selectedOrder.listingType === "ebooks-digital" && isSeller(selectedOrder) && (
+                    <button
+                      type="button"
+                      title="Deliver Digital Product Files"
+                      disabled={uploadingFile || isRecording}
+                      onClick={() => setDeliveryPanelOpen((prev) => !prev)}
+                      className={`shrink-0 grid size-9 place-items-center rounded-xl border transition shadow-sm ${
+                        deliveryPanelOpen
+                          ? "border-[#D4AF37] bg-[#D4AF37]/20 text-[#D4AF37] ring-1 ring-[#D4AF37]/50"
+                          : "border-white/10 bg-[#0c1017] text-[#D4AF37] hover:border-[#D4AF37]/50 hover:bg-[#D4AF37]/10"
+                      } disabled:opacity-40`}
+                    >
+                      <PackageCheck size={16} />
+                    </button>
+                  )}
 
                   {/* text input */}
                   <input
