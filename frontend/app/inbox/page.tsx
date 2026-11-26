@@ -52,6 +52,7 @@ interface P2POrder {
   sellerConfirmed: boolean;
   isClosed: boolean;
   closedAt: string | null;
+  closedBy: number | null;
   createdAt: string;
 }
 
@@ -136,6 +137,10 @@ export default function InboxPage() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [showReceiptConfirm, setShowReceiptConfirm] = useState(false);
 
+  // Feature 10: Admin chat closure state
+  const [closingChat, setClosingChat] = useState(false);
+  const [showAdminCloseConfirm, setShowAdminCloseConfirm] = useState(false);
+
   // Participants online status (for escrow order chat header)
   const [participantsStatus, setParticipantsStatus] = useState<{
     buyer: { isOnline: boolean; label: string } | null;
@@ -192,6 +197,7 @@ export default function InboxPage() {
           sellerConfirmed: !!o.seller_confirmed,
           isClosed: !!o.is_closed,
           closedAt: o.closed_at || null,
+          closedBy: o.closed_by ? Number(o.closed_by) : null,
           createdAt: new Date(o.created_at).toLocaleDateString(),
         }));
         setOrders(mapped);
@@ -317,6 +323,7 @@ export default function InboxPage() {
     setDeliveryPanelOpen(false);
     setDownloadError(null);
     setShowReceiptConfirm(false);
+    setShowAdminCloseConfirm(false);
 
     if (order.listingType === "ebooks-digital") {
       fetchDeliveries(order.id);
@@ -554,8 +561,36 @@ export default function InboxPage() {
     }
   };
 
-  const handleSendAdminSupport = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Feature 10: Admin closes the escrow chat after both confirmations
+  const handleAdminCloseChat = async () => {
+    if (!selectedOrder || !user?.id) return;
+    setShowAdminCloseConfirm(false);
+    setClosingChat(true);
+    try {
+      const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/close`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (data.success) {
+        await loadOrders();
+        const msgRes = await fetchBackend(`escrow/orders/${selectedOrder.id}/messages`);
+        const msgData = await msgRes.json();
+        if (msgData.success && Array.isArray(msgData.messages)) {
+          setOrderMessages(msgData.messages);
+        }
+        setSelectedOrder((prev) => prev ? { ...prev, isClosed: true, status: "success" } : null);
+      } else {
+        alert(data.error || "Failed to close trade.");
+      }
+    } catch {
+      alert("Network error while closing trade. Please try again.");
+    } finally {
+      setClosingChat(false);
+    }
+  };
+
+  const handleSendAdminSupport = (e: React.FormEvent) => {    e.preventDefault();
     if (!adminChatInput.trim()) return;
     const userMsg = adminChatInput.trim();
     const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -593,6 +628,7 @@ export default function InboxPage() {
   const isSeller = (order: P2POrder) =>
     (order.sellerId != null && order.sellerId === Number(user?.id)) ||
     (Boolean(order.seller) && Boolean(user?.name) && order.seller.toLowerCase() === user?.name?.toLowerCase());
+  const isUserAdmin = user?.role === "admin";
 
   // Polling for new messages and status updates while modal is open
   useEffect(() => {
@@ -623,6 +659,8 @@ export default function InboxPage() {
               buyerConfirmed: !!updated.buyer_confirmed,
               sellerConfirmed: !!updated.seller_confirmed,
               isClosed: !!updated.is_closed,
+              closedAt: updated.closed_at || null,
+              closedBy: updated.closed_by ? Number(updated.closed_by) : null,
               status: updated.status,
             } : null));
           }
@@ -986,6 +1024,36 @@ export default function InboxPage() {
               </div>
             )}
 
+            {/* Feature 10: Awaiting Admin Closure banner (non-admin view) */}
+            {!selectedOrder.isClosed && selectedOrder.buyerConfirmed && selectedOrder.sellerConfirmed && !isUserAdmin && (
+              <div className="shrink-0 flex items-center gap-2 border-b border-amber-500/30 bg-amber-950/40 px-4 py-2 text-[11px] text-amber-200">
+                <Lock size={12} className="text-amber-400 shrink-0" />
+                <span>Awaiting Admin Closure — both parties have confirmed. The admin will review and finalize this trade.</span>
+              </div>
+            )}
+
+            {/* Feature 10: Admin close button — shown only to admin when both confirmed */}
+            {!selectedOrder.isClosed && selectedOrder.buyerConfirmed && selectedOrder.sellerConfirmed && isUserAdmin && (
+              <div className="shrink-0 flex items-center justify-between gap-3 border-b border-rose-500/30 bg-rose-950/30 px-4 py-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ShieldCheck size={14} className="text-rose-400 shrink-0" />
+                  <p className="text-[11px] text-slate-200">
+                    <span className="font-bold text-rose-400">Admin Action: </span>
+                    Both buyer and seller have confirmed. You may now close this trade conversation and release funds.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={closingChat}
+                  onClick={() => setShowAdminCloseConfirm(true)}
+                  className="shrink-0 flex items-center gap-1.5 rounded-xl bg-rose-500 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-rose-400 active:scale-95 disabled:opacity-60 transition shadow-md shadow-rose-500/20"
+                >
+                  <Lock size={12} />
+                  <span>{closingChat ? "Closing..." : "Close Trade"}</span>
+                </button>
+              </div>
+            )}
+
             {/* Digital Product: Seller File Delivery Upload Interface (Feature 8) */}
             {!selectedOrder.isClosed && selectedOrder.status === "processing" && isSeller(selectedOrder) && selectedOrder.listingType === "ebooks-digital" && (
               <div className="shrink-0 border-b border-amber-500/30 bg-[#0d131f] p-3 sm:px-4 space-y-2">
@@ -1331,9 +1399,17 @@ export default function InboxPage() {
 
             {/* ── Bottom input bar ── */}
             {selectedOrder.isClosed ? (
-              <div className="shrink-0 flex items-center justify-center gap-2 border-t border-white/[0.08] bg-[#0c1017] p-3 text-xs text-slate-500">
-                <Lock size={13} className="text-slate-500" />
-                <span>Trade conversation closed &bull; Use Chat with Admin for support</span>
+              <div className="shrink-0 flex flex-col items-center justify-center gap-0.5 border-t border-white/[0.08] bg-[#0c1017] p-3 text-xs text-slate-400">
+                <div className="flex items-center gap-2 font-semibold text-slate-300">
+                  <Lock size={13} className="text-slate-400" />
+                  <span>Conversation Closed by Admin &bull; Read-Only</span>
+                </div>
+                <span className="text-[10px] text-slate-500">
+                  {selectedOrder.closedAt
+                    ? `Closed on ${new Date(selectedOrder.closedAt).toLocaleString()} • `
+                    : ""}
+                  Use Chat with Admin for support
+                </span>
               </div>
             ) : (
               <div className="shrink-0 border-t border-white/[0.08] bg-[#111722] p-3 sm:px-4 sm:py-3">
@@ -1486,6 +1562,51 @@ export default function InboxPage() {
                 <Send size={14} />
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Feature 10: Admin Trade Closure Confirmation Modal ===== */}
+      {showAdminCloseConfirm && selectedOrder && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-rose-500/30 bg-[#0c1017] shadow-2xl shadow-black/80 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-rose-500/10 border border-rose-500/20 shrink-0">
+                <Lock size={20} className="text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Close Escrow Trade</h3>
+                <p className="text-[11px] text-slate-400">Trade #{selectedOrder.id} — {selectedOrder.channelName}</p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-[11px] text-amber-200/80 leading-relaxed space-y-1">
+              <p><span className="font-bold text-amber-300">⚠ Confirm closure:</span></p>
+              <p>Both buyer and seller have confirmed this trade. Closing will:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-amber-100/70">
+                <li>Mark the conversation as <strong>closed</strong> (buyer/seller messaging disabled)</li>
+                <li>Release funds of <strong>{selectedOrder.price}</strong> to the seller</li>
+                <li>Send closure notifications to buyer and seller</li>
+                <li>Preserve all existing message history</li>
+              </ul>
+              <p className="font-semibold text-rose-300 mt-1">This action is irreversible and will be logged with your admin ID.</p>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowAdminCloseConfirm(false)}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={closingChat}
+                onClick={handleAdminCloseChat}
+                className="flex-1 rounded-xl bg-rose-500 px-4 py-2 text-xs font-bold text-white hover:bg-rose-400 active:scale-95 disabled:opacity-60 transition shadow-md shadow-rose-500/20"
+              >
+                {closingChat ? "Closing…" : "Yes, Close Trade"}
+              </button>
+            </div>
           </div>
         </div>
       )}

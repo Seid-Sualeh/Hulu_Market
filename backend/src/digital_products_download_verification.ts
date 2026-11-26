@@ -79,7 +79,7 @@ async function runDownloadVerification() {
     const opts: RequestInit = {
       method,
       headers,
-      body: body ? JSON.stringify(body) : (rawBody ?? undefined),
+      body: body ? JSON.stringify(body) : ((rawBody as unknown as BodyInit) ?? undefined),
     };
 
     const res = await fetch(`${baseUrl}/api/${path}`, opts);

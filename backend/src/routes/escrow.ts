@@ -586,8 +586,14 @@ escrowRouter.get("/orders/:id/participants-status", authenticateToken, async (re
  * Enforces sender role strictly based on verified user identity.
  */
 escrowRouter.post("/orders/:id/messages", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
   try {
     const orderId = parseInt(req.params.id as string, 10);
+    if (isNaN(orderId) || orderId <= 0) {
+      res.status(400).json({ success: false, error: "Invalid order ID." });
+      return;
+    }
+
     const { message, messageType, attachmentUrl } = req.body;
 
     if (!message || !message.trim()) {
@@ -595,19 +601,23 @@ escrowRouter.post("/orders/:id/messages", authenticateToken, async (req: Request
       return;
     }
 
-    // Fetch order to verify participation and status
-    const [orderCheck] = await pool.query<RowDataPacket[]>(
-      "SELECT buyer_id, seller_id, is_closed FROM escrow_orders WHERE id = ? LIMIT 1",
+    await conn.beginTransaction();
+
+    // Fetch order with row lock to serialize with concurrent chat closure
+    const [orderCheck] = await conn.query<RowDataPacket[]>(
+      "SELECT buyer_id, seller_id, is_closed FROM escrow_orders WHERE id = ? LIMIT 1 FOR UPDATE",
       [orderId]
     );
 
     if (orderCheck.length === 0) {
+      await conn.rollback();
       res.status(404).json({ success: false, error: "Escrow order not found." });
       return;
     }
 
     const order = orderCheck[0];
     if (order.is_closed) {
+      await conn.rollback();
       res.status(400).json({
         success: false,
         error: "This trade conversation is closed. No further messages can be sent.",
@@ -627,6 +637,7 @@ escrowRouter.post("/orders/:id/messages", authenticateToken, async (req: Request
     } else if (currentUserId === Number(order.buyer_id)) {
       actualRole = "buyer";
     } else {
+      await conn.rollback();
       res.status(403).json({ success: false, error: "Only participants in this trade may send messages." });
       return;
     }
@@ -635,7 +646,7 @@ escrowRouter.post("/orders/:id/messages", authenticateToken, async (req: Request
       ? "Hulu Admin"
       : req.user!.email ? req.user!.email.split("@")[0] : `User #${currentUserId}`;
 
-    const [result] = await pool.query<ResultSetHeader>(
+    const [result] = await conn.query<ResultSetHeader>(
       `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type, attachment_url)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -648,6 +659,8 @@ escrowRouter.post("/orders/:id/messages", authenticateToken, async (req: Request
         attachmentUrl || null,
       ]
     );
+
+    await conn.commit();
 
     res.status(201).json({
       success: true,
@@ -665,7 +678,10 @@ escrowRouter.post("/orders/:id/messages", authenticateToken, async (req: Request
       },
     });
   } catch (error: unknown) {
+    await conn.rollback();
     res.status(500).json({ success: false, error: (error as Error).message });
+  } finally {
+    conn.release();
   }
 });
 
@@ -867,8 +883,14 @@ escrowRouter.post("/orders/:id/request-confirmation", requireAdmin, async (req: 
  * Identity is derived exclusively from the verified JWT (req.user.id).
  */
 escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const conn = await pool.getConnection();
   try {
     const orderId = parseInt(req.params.id as string, 10);
+    if (isNaN(orderId) || orderId <= 0) {
+      res.status(400).json({ success: false, error: "Invalid order ID." });
+      return;
+    }
+
     const { role } = req.body; // role: 'buyer' | 'seller'
 
     if (!role || !["buyer", "seller"].includes(role)) {
@@ -876,23 +898,28 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
       return;
     }
 
-    const [orderRows] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM escrow_orders WHERE id = ? LIMIT 1",
+    await conn.beginTransaction();
+
+    const [orderRows] = await conn.query<RowDataPacket[]>(
+      "SELECT * FROM escrow_orders WHERE id = ? LIMIT 1 FOR UPDATE",
       [orderId]
     );
 
     if (orderRows.length === 0) {
+      await conn.rollback();
       res.status(404).json({ success: false, error: "Escrow order not found." });
       return;
     }
 
     const order = orderRows[0];
     if (order.is_closed) {
+      await conn.rollback();
       res.status(400).json({ success: false, error: "This trade conversation is already closed." });
       return;
     }
 
     if (order.status !== "processing") {
+      await conn.rollback();
       res.status(400).json({
         success: false,
         error: `Cannot confirm trade in '${order.status}' status. Confirmations are only accepted while processing.`,
@@ -906,19 +933,23 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
     // Strict identity check: authenticated user MUST match the respective side of the trade
     if (role === "buyer") {
       if (Number(order.buyer_id) !== currentUserId) {
+        await conn.rollback();
         res.status(403).json({ success: false, error: "Only the verified buyer of this trade can confirm as buyer." });
         return;
       }
       if (order.buyer_confirmed) {
+        await conn.rollback();
         res.status(400).json({ success: false, error: "Buyer confirmation has already been recorded for this trade." });
         return;
       }
     } else if (role === "seller") {
       if (Number(order.seller_id) !== currentUserId) {
+        await conn.rollback();
         res.status(403).json({ success: false, error: "Only the verified seller of this trade can confirm as seller." });
         return;
       }
       if (order.seller_confirmed) {
+        await conn.rollback();
         res.status(400).json({ success: false, error: "Seller confirmation has already been recorded for this trade." });
         return;
       }
@@ -926,13 +957,14 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
 
     // For digital product buyer confirmations: verify at least one valid delivery exists
     if (role === "buyer" && order.listing_type === "ebooks-digital") {
-      const [delivRows] = await pool.query<RowDataPacket[]>(
+      const [delivRows] = await conn.query<RowDataPacket[]>(
         `SELECT id FROM digital_order_deliveries
          WHERE order_id = ? AND status = 'delivered'
          LIMIT 1`,
         [orderId]
       );
       if (delivRows.length === 0) {
+        await conn.rollback();
         res.status(400).json({
           success: false,
           error: "Cannot confirm receipt: the seller has not yet delivered any files for this order.",
@@ -943,7 +975,7 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
 
     // Update the confirmation flag
     const field = role === "buyer" ? "buyer_confirmed" : "seller_confirmed";
-    await pool.query(`UPDATE escrow_orders SET ${field} = TRUE WHERE id = ?`, [orderId]);
+    await conn.query(`UPDATE escrow_orders SET ${field} = TRUE WHERE id = ?`, [orderId]);
 
     // Post automated confirmation message (tailored by listing_type)
     const isDigitalOrder = order.listing_type === "ebooks-digital";
@@ -955,26 +987,28 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
         ? "✅ Buyer has confirmed successful receipt of the channel ownership. Waiting for seller confirmation..."
         : "✅ Seller has confirmed the ownership transfer is complete. Waiting for buyer confirmation...";
 
-    await pool.query(
+    await conn.query(
       `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type)
        VALUES (?, 0, 'Hulu Escrow Bot', 'admin', ?, 'text')`,
       [orderId, confirmMsg]
     );
 
     // Check if both have confirmed
-    const [updatedRows] = await pool.query<RowDataPacket[]>(
+    const [updatedRows] = await conn.query<RowDataPacket[]>(
       "SELECT buyer_confirmed, seller_confirmed FROM escrow_orders WHERE id = ? LIMIT 1",
       [orderId]
     );
     const bothConfirmed = !!updatedRows[0]?.buyer_confirmed && !!updatedRows[0]?.seller_confirmed;
 
     if (bothConfirmed) {
-      await pool.query(
+      await conn.query(
         `INSERT INTO escrow_messages (order_id, sender_id, sender_name, sender_role, message, message_type)
          VALUES (?, 0, 'Hulu Escrow Bot', 'admin', ?, 'text')`,
         [orderId, "🎉 Both parties have confirmed! The admin can now finalize and close this trade."]
       );
     }
+
+    await conn.commit();
 
     res.json({
       success: true,
@@ -982,9 +1016,77 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
       bothConfirmed,
     });
   } catch (error: unknown) {
+    await conn.rollback();
     const err = error as Error;
     console.error("[Escrow Confirm Error]:", err);
     res.status(500).json({ success: false, error: err.message });
+  } finally {
+    conn.release();
+  }
+});
+
+/**
+ * GET /api/escrow/orders/:id/chat-status
+ * Returns the current chat lifecycle status for an escrow order.
+ * Accessible by buyer, seller, or admin.
+ * Feature 10: used by admin close button and lifecycle state display.
+ */
+escrowRouter.get("/orders/:id/chat-status", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orderId = parseInt(req.params.id as string, 10);
+    if (isNaN(orderId)) {
+      res.status(400).json({ success: false, error: "Invalid order ID." });
+      return;
+    }
+
+    const [orderRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, buyer_id, seller_id, status, buyer_confirmed, seller_confirmed,
+              is_closed, closed_at, closed_by, channel_name, amount, listing_type
+       FROM escrow_orders WHERE id = ? LIMIT 1`,
+      [orderId]
+    );
+
+    if (orderRows.length === 0) {
+      res.status(404).json({ success: false, error: "Escrow order not found." });
+      return;
+    }
+
+    const order = orderRows[0];
+    const currentUserId = req.user!.id;
+    const isAdmin = req.user!.role === "admin";
+
+    if (!isAdmin && currentUserId !== Number(order.buyer_id) && currentUserId !== Number(order.seller_id)) {
+      res.status(403).json({ success: false, error: "Access denied." });
+      return;
+    }
+
+    const bothConfirmed = !!order.buyer_confirmed && !!order.seller_confirmed;
+
+    let chatState: "open" | "awaiting_closure" | "closed";
+    if (order.is_closed) {
+      chatState = "closed";
+    } else if (bothConfirmed) {
+      chatState = "awaiting_closure";
+    } else {
+      chatState = "open";
+    }
+
+    res.json({
+      success: true,
+      orderId,
+      chatState,
+      buyerConfirmed: !!order.buyer_confirmed,
+      sellerConfirmed: !!order.seller_confirmed,
+      bothConfirmed,
+      canAdminClose: isAdmin && bothConfirmed && !order.is_closed,
+      isClosed: !!order.is_closed,
+      closedAt: order.closed_at || null,
+      closedBy: order.closed_by || null,
+      orderStatus: order.status,
+      listingType: order.listing_type,
+    });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
   }
 });
 
@@ -997,6 +1099,10 @@ escrowRouter.patch("/orders/:id/close", requireAdmin, async (req: Request, res: 
   const conn = await pool.getConnection();
   try {
     const orderId = parseInt(req.params.id as string, 10);
+    if (isNaN(orderId) || orderId <= 0) {
+      res.status(400).json({ success: false, error: "Invalid order ID." });
+      return;
+    }
 
     await conn.beginTransaction();
 
@@ -1019,6 +1125,12 @@ escrowRouter.patch("/orders/:id/close", requireAdmin, async (req: Request, res: 
       return;
     }
 
+    if (order.status === "cancelled") {
+      await conn.rollback();
+      res.status(400).json({ success: false, error: "Cannot close a cancelled trade." });
+      return;
+    }
+
     if (!order.buyer_confirmed || !order.seller_confirmed) {
       await conn.rollback();
       res.status(400).json({
@@ -1030,8 +1142,8 @@ escrowRouter.patch("/orders/:id/close", requireAdmin, async (req: Request, res: 
 
     // Close trade and mark as success
     await conn.query(
-      "UPDATE escrow_orders SET is_closed = TRUE, closed_at = NOW(), status = 'success' WHERE id = ?",
-      [orderId]
+      "UPDATE escrow_orders SET is_closed = TRUE, closed_at = NOW(), closed_by = ?, status = 'success' WHERE id = ?",
+      [req.user!.id, orderId]
     );
 
     // Release funds from locked_balance to seller if not already released
@@ -1068,11 +1180,39 @@ escrowRouter.patch("/orders/:id/close", requireAdmin, async (req: Request, res: 
       ]
     );
 
+    // Notify buyer of closure
+    try {
+      await conn.query(
+        `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+         VALUES (?, 'escrow', 'Trade Closed ✅', ?, '/inbox', 'View Trade')`,
+        [
+          order.buyer_id,
+          `Your escrow trade #${orderId} for "${order.channel_name}" has been closed by admin. The transaction is complete. Thank you for using Hulu Market!`,
+        ]
+      );
+    } catch {}
+
+    // Notify seller of closure
+    if (order.seller_id) {
+      try {
+        await conn.query(
+          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
+           VALUES (?, 'escrow', 'Trade Closed ✅', ?, '/inbox', 'View Trade')`,
+          [
+            order.seller_id,
+            `Your escrow trade #${orderId} for "${order.channel_name}" has been closed by admin. The funds of ${order.amount} ETB have been released to your account. Thank you!`,
+          ]
+        );
+      } catch {}
+    }
+
     await conn.commit();
 
     res.json({
       success: true,
       message: `Trade #${orderId} has been finalized and closed successfully.`,
+      closedBy: req.user!.id,
+      closedAt: new Date().toISOString(),
     });
   } catch (error: unknown) {
     await conn.rollback();

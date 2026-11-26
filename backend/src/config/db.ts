@@ -326,6 +326,7 @@ export async function initDatabase(): Promise<boolean> {
         buyer_confirmation_requested BOOLEAN NOT NULL DEFAULT FALSE,
         is_closed BOOLEAN NOT NULL DEFAULT FALSE,
         closed_at TIMESTAMP NULL,
+        closed_by INT NULL DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_escrow_buyer (buyer_id),
@@ -342,7 +343,10 @@ export async function initDatabase(): Promise<boolean> {
     await safeAddColumn(conn, "escrow_orders", "buyer_confirmation_requested", "BOOLEAN NOT NULL DEFAULT FALSE");
     await safeAddColumn(conn, "escrow_orders", "is_closed", "BOOLEAN NOT NULL DEFAULT FALSE");
     await safeAddColumn(conn, "escrow_orders", "closed_at", "TIMESTAMP NULL");
+    // Feature 10: record which admin performed the closure
+    await safeAddColumn(conn, "escrow_orders", "closed_by", "INT NULL DEFAULT NULL");
     await safeAddIndex(conn, "escrow_orders", "idx_escrow_channel_buyer_status", "`channel_id`, `buyer_id`, `status`");
+    await safeAddIndex(conn, "escrow_orders", "idx_escrow_closed", "`is_closed`, `status`");
 
     // 5. Escrow Chat Messages (Supervised by Admin, Seller, and Buyer)
     await conn.query(`
