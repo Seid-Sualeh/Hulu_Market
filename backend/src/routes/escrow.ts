@@ -924,6 +924,23 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
       }
     }
 
+    // For digital product buyer confirmations: verify at least one valid delivery exists
+    if (role === "buyer" && order.listing_type === "ebooks-digital") {
+      const [delivRows] = await pool.query<RowDataPacket[]>(
+        `SELECT id FROM digital_order_deliveries
+         WHERE order_id = ? AND status = 'delivered'
+         LIMIT 1`,
+        [orderId]
+      );
+      if (delivRows.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: "Cannot confirm receipt: the seller has not yet delivered any files for this order.",
+        });
+        return;
+      }
+    }
+
     // Update the confirmation flag
     const field = role === "buyer" ? "buyer_confirmed" : "seller_confirmed";
     await pool.query(`UPDATE escrow_orders SET ${field} = TRUE WHERE id = ?`, [orderId]);

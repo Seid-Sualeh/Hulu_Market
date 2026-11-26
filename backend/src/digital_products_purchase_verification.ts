@@ -470,6 +470,15 @@ async function runPurchaseVerification() {
     );
 
     // TEST 16: Digital product confirmation message wording (F7-02)
+    // Feature 9: buyer confirm requires a delivered delivery to exist first.
+    // Insert a minimal delivery for orderId2 so buyer can confirm.
+    const [delRes16] = await pool.query<any>(
+      `INSERT INTO digital_order_deliveries (order_id, listing_id, file_count, delivery_note, status)
+       VALUES (?, ?, 0, 'F7-test delivery for confirm test', 'delivered')`,
+      [orderId2, activeDigitalChannelId]
+    );
+    const delivery16Id = delRes16.insertId;
+
     const t16a = await apiRequest(`/api/escrow/orders/${orderId2}/confirm`, {
       method: "PATCH",
       token: buyerBToken,

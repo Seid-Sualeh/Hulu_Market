@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Bot,
   CheckCircle2,
+  Download,
   ExternalLink,
   Eye,
   FileText,
@@ -129,6 +130,11 @@ export default function InboxPage() {
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [deliverySuccess, setDeliverySuccess] = useState<string | null>(null);
   const [deliveryPanelOpen, setDeliveryPanelOpen] = useState(false);
+
+  // Feature 9: Buyer file download state
+  const [downloadingFileId, setDownloadingFileId] = useState<number | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [showReceiptConfirm, setShowReceiptConfirm] = useState(false);
 
   // Participants online status (for escrow order chat header)
   const [participantsStatus, setParticipantsStatus] = useState<{
@@ -309,6 +315,8 @@ export default function InboxPage() {
     setDeliveryError(null);
     setDeliverySuccess(null);
     setDeliveryPanelOpen(false);
+    setDownloadError(null);
+    setShowReceiptConfirm(false);
 
     if (order.listingType === "ebooks-digital") {
       fetchDeliveries(order.id);
@@ -441,6 +449,11 @@ export default function InboxPage() {
   // Buyer confirms ownership receipt
   const handleBuyerConfirm = async () => {
     if (!selectedOrder || !user?.id) return;
+    // Digital product orders: show modal instead of browser confirm
+    if (selectedOrder.listingType === "ebooks-digital") {
+      setShowReceiptConfirm(true);
+      return;
+    }
     if (!confirm("Are you sure you have successfully received the channel ownership and want to confirm completion?")) return;
     setConfirmingCompletion(true);
     try {
@@ -461,6 +474,58 @@ export default function InboxPage() {
       alert("Network error. Please try again.");
     } finally {
       setConfirmingCompletion(false);
+    }
+  };
+
+  // Digital product receipt confirmation (from modal)
+  const handleDigitalReceiptConfirm = async () => {
+    if (!selectedOrder || !user?.id) return;
+    setShowReceiptConfirm(false);
+    setConfirmingCompletion(true);
+    try {
+      const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/confirm`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "buyer", userId: user.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await openOrderChat({ ...selectedOrder, buyerConfirmed: true });
+        await loadOrders();
+      } else {
+        alert(data.error || "Failed to confirm receipt.");
+      }
+    } catch {
+      alert("Network error. Please try again.");
+    } finally {
+      setConfirmingCompletion(false);
+    }
+  };
+
+  // Feature 9: Download a delivered file
+  const handleDownloadFile = async (orderId: number, fileId: number, filename: string) => {
+    setDownloadingFileId(fileId);
+    setDownloadError(null);
+    try {
+      const res = await fetchBackend(`escrow/orders/${orderId}/deliveries/${fileId}/download`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setDownloadError((data as any).error || `Download failed (${res.status})`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      setDownloadError("Network error during download. Please try again.");
+    } finally {
+      setDownloadingFileId(null);
     }
   };
 
@@ -847,7 +912,7 @@ export default function InboxPage() {
                   <p className="text-[11px] text-slate-200">
                     <span className="font-bold text-emerald-400">Admin instruction: </span>
                     {selectedOrder.listingType === "ebooks-digital"
-                      ? "Once you have received and verified the digital product files, click Mark as Complete."
+                      ? "Download and review the delivered files below, then click Confirm Receipt of Files."
                       : "If you have received channel ownership and verified everything, click Mark as Complete."}
                   </p>
                 </div>
@@ -858,7 +923,7 @@ export default function InboxPage() {
                   className="shrink-0 flex items-center gap-1.5 rounded-xl bg-emerald-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-300 active:scale-95 disabled:opacity-60 transition shadow-md shadow-emerald-500/20"
                 >
                   <CheckCircle2 size={13} className="text-slate-950" />
-                  <span>{confirmingCompletion ? "Confirming..." : "Mark as Complete"}</span>
+                  <span>{confirmingCompletion ? "Confirming..." : selectedOrder.listingType === "ebooks-digital" ? "Confirm Receipt of Files" : "Mark as Complete"}</span>
                 </button>
               </div>
             )}
@@ -1055,7 +1120,7 @@ export default function InboxPage() {
                     <span>Delivered Files ({orderDeliveries.reduce((sum, d) => sum + d.files.length, 0)} total)</span>
                   </span>
                   <span className="text-[10px] text-teal-400/80 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-full font-semibold">
-                    Delivered • Awaiting Buyer Verification
+                    {isBuyer(selectedOrder) ? "Download & Review Before Confirming" : "Delivered • Awaiting Buyer Verification"}
                   </span>
                 </div>
 
@@ -1072,14 +1137,42 @@ export default function InboxPage() {
                             <span className="text-slate-200 font-medium truncate">{file.original_filename}</span>
                             <span className="text-[10px] text-slate-500 shrink-0">({formatBytes(file.file_size_bytes)})</span>
                           </div>
-                          <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0">
-                            {file.file_format}
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">
+                              {file.file_format}
+                            </span>
+                            {isBuyer(selectedOrder) && delivery.status === "delivered" && (
+                              <button
+                                type="button"
+                                disabled={downloadingFileId === file.id}
+                                onClick={() => handleDownloadFile(selectedOrder.id, file.id, file.original_filename)}
+                                title={`Download ${file.original_filename}`}
+                                className="inline-flex items-center gap-1 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 px-2 py-0.5 text-[10px] font-bold text-[#D4AF37] hover:bg-[#D4AF37]/30 active:scale-95 disabled:opacity-50 transition"
+                              >
+                                {downloadingFileId === file.id ? (
+                                  <span className="animate-pulse">↓ Downloading…</span>
+                                ) : (
+                                  <><Download size={10} /><span>Download</span></>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
                   ))}
                 </div>
+
+                {/* Download error display */}
+                {isBuyer(selectedOrder) && downloadError && (
+                  <div className="flex items-center gap-1.5 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-lg mt-1">
+                    <AlertCircle size={12} className="shrink-0" />
+                    <span>{downloadError}</span>
+                    <button type="button" onClick={() => setDownloadError(null)} className="ml-auto text-rose-400/60 hover:text-rose-300">
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1393,6 +1486,45 @@ export default function InboxPage() {
                 <Send size={14} />
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Feature 9: Digital Receipt Confirmation Modal ===== */}
+      {showReceiptConfirm && selectedOrder && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-emerald-500/30 bg-[#0c1017] shadow-2xl shadow-black/80 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 shrink-0">
+                <PackageCheck size={20} className="text-emerald-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Confirm Receipt of Files</h3>
+                <p className="text-[11px] text-slate-400">Trade #{selectedOrder.id}</p>
+              </div>
+            </div>
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-[11px] text-amber-200/80 leading-relaxed space-y-1">
+              <p><span className="font-bold text-amber-300">⚠ Read before confirming:</span></p>
+              <p>The seller has delivered files to this trade. Confirm receipt only after you have downloaded and reviewed all files.</p>
+              <p className="font-semibold text-amber-300">This action cannot be undone. Once confirmed, funds will be queued for release to the seller after admin finalization.</p>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowReceiptConfirm(false)}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition"
+              >
+                Cancel — Not Yet
+              </button>
+              <button
+                type="button"
+                disabled={confirmingCompletion}
+                onClick={handleDigitalReceiptConfirm}
+                className="flex-1 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400 active:scale-95 disabled:opacity-60 transition shadow-md shadow-emerald-500/20"
+              >
+                {confirmingCompletion ? "Confirming…" : "Yes, Confirm Receipt"}
+              </button>
+            </div>
           </div>
         </div>
       )}

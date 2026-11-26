@@ -512,6 +512,26 @@ export async function initDatabase(): Promise<boolean> {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
+    // 13. Digital Order File Downloads (Feature 9: Download audit & access tracking)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS digital_order_file_downloads (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        delivery_id INT NOT NULL,
+        file_id INT NOT NULL,
+        buyer_id INT NOT NULL,
+        ip_address VARCHAR(45) NULL,
+        user_agent VARCHAR(255) NULL,
+        status ENUM('success', 'failed') NOT NULL DEFAULT 'success',
+        downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_dofd_order (order_id),
+        INDEX idx_dofd_file (file_id),
+        INDEX idx_dofd_buyer (buyer_id),
+        CONSTRAINT fk_dofd_order FOREIGN KEY (order_id) REFERENCES escrow_orders(id) ON DELETE CASCADE,
+        CONSTRAINT fk_dofd_file FOREIGN KEY (file_id) REFERENCES digital_order_delivery_files(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     // Migrate: add last_seen to users for online/offline indicator
     await safeAddColumn(conn, "users", "last_seen", "TIMESTAMP NULL DEFAULT NULL");
 

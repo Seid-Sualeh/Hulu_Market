@@ -13,6 +13,16 @@ import {
   validateDigitalProductFile,
   getMaxFileSizeLimit,
 } from "../services/digitalFileValidator.js";
+import rateLimit from "express-rate-limit";
+
+/** Rate limiter for buyer file downloads: 20 requests per minute per IP. */
+const downloadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many download requests. Try again soon." },
+});
 
 export const escrowDeliveriesRouter = Router();
 
@@ -506,6 +516,142 @@ escrowDeliveriesRouter.get(
       res.json({ success: true, deliveries });
     } catch (error: unknown) {
       res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  }
+);
+
+/**
+ * GET /api/escrow/orders/:id/deliveries/:fileId/download
+ * Buyer (or admin) securely downloads a delivered digital product file.
+ * - Verifies buyer ownership of the order.
+ * - Verifies file belongs to this order (server-side, never trusts client key).
+ * - Verifies delivery status is 'delivered' (not revoked).
+ * - Streams file via proxy (Buffer); never exposes storage key or public URL.
+ * - SHA-256 integrity check before serving.
+ * - Logs each download attempt to digital_order_file_downloads.
+ * - Does NOT auto-confirm buyer or release funds.
+ */
+escrowDeliveriesRouter.get(
+  "/orders/:id/deliveries/:fileId/download",
+  authenticateToken,
+  downloadLimiter,
+  async (req: Request, res: Response): Promise<void> => {
+    const orderId = parseInt(req.params.id as string, 10);
+    const fileId = parseInt(req.params.fileId as string, 10);
+
+    if (isNaN(orderId) || orderId <= 0 || isNaN(fileId) || fileId <= 0) {
+      res.status(400).json({ success: false, error: "Invalid order or file ID." });
+      return;
+    }
+
+    try {
+      // 1. Fetch order
+      const [orderRows] = await pool.query<RowDataPacket[]>(
+        "SELECT id, listing_type, buyer_id, seller_id, status, is_closed FROM escrow_orders WHERE id = ? LIMIT 1",
+        [orderId]
+      );
+      if (orderRows.length === 0) {
+        res.status(404).json({ success: false, error: "Order not found." });
+        return;
+      }
+      const order = orderRows[0];
+
+      // 2. Must be a digital product order
+      if (order.listing_type !== "ebooks-digital") {
+        res.status(400).json({ success: false, error: "File downloads are only available for digital product orders." });
+        return;
+      }
+
+      // 3. Authorization: only the verified buyer or an admin may download
+      const currentUserId = req.user!.id;
+      const currentUserRole = req.user!.role;
+      if (Number(order.buyer_id) !== currentUserId && currentUserRole !== "admin") {
+        res.status(403).json({ success: false, error: "Only the buyer of this order may download its files." });
+        return;
+      }
+
+      // 4. Fetch file record — binding validated server-side (order_id = orderId)
+      const [fileRows] = await pool.query<RowDataPacket[]>(
+        `SELECT f.id, f.delivery_id, f.original_filename, f.storage_key,
+                f.mime_type, f.file_size_bytes, f.checksum_sha256
+         FROM digital_order_delivery_files f
+         WHERE f.id = ? AND f.order_id = ?
+         LIMIT 1`,
+        [fileId, orderId]
+      );
+      if (fileRows.length === 0) {
+        res.status(404).json({ success: false, error: "File not found for this order." });
+        return;
+      }
+      const fileRecord = fileRows[0];
+
+      // 5. Check delivery status (must be 'delivered', not 'revoked')
+      const [delivRows] = await pool.query<RowDataPacket[]>(
+        "SELECT status FROM digital_order_deliveries WHERE id = ? LIMIT 1",
+        [fileRecord.delivery_id]
+      );
+      if (delivRows.length === 0 || delivRows[0].status !== "delivered") {
+        res.status(410).json({ success: false, error: "This delivery has been revoked and is no longer available." });
+        return;
+      }
+
+      // 6. Retrieve file from storage (server-side key, never from client)
+      const storage = getStorageAdapter();
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = await storage.getObject(fileRecord.storage_key);
+      } catch (storageErr: unknown) {
+        const msg = (storageErr as Error).message || "";
+        if (msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("no such")) {
+          res.status(404).json({ success: false, error: "File not found in storage." });
+        } else {
+          console.error("[Download] Storage retrieval error:", msg);
+          res.status(500).json({ success: false, error: "Failed to retrieve file." });
+        }
+        return;
+      }
+
+      // 7. SHA-256 integrity check
+      if (fileRecord.checksum_sha256) {
+        const actualHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+        if (actualHash !== fileRecord.checksum_sha256) {
+          console.error(
+            `[Download] Integrity check FAILED for file ${fileId}. Expected ${fileRecord.checksum_sha256}, got ${actualHash}`
+          );
+          res.status(500).json({ success: false, error: "File integrity check failed. Please contact support." });
+          return;
+        }
+      }
+
+      // 8. Log download audit record (non-fatal if fails)
+      const ipAddress = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+        req.socket?.remoteAddress || null;
+      const userAgent = (req.headers["user-agent"] || "").substring(0, 255) || null;
+      try {
+        await pool.query(
+          `INSERT INTO digital_order_file_downloads
+             (order_id, delivery_id, file_id, buyer_id, ip_address, user_agent, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'success')`,
+          [orderId, fileRecord.delivery_id, fileId, currentUserId, ipAddress, userAgent]
+        );
+      } catch (logErr) {
+        console.error("[Download] Failed to log download audit:", (logErr as Error).message);
+      }
+
+      // 9. Sanitize filename for Content-Disposition (strip non-ASCII, quotes)
+      const rawFilename = fileRecord.original_filename || "download";
+      const safeFilename = rawFilename.replace(/[^\x20-\x7E]/g, "").replace(/["\\]/g, "").trim() || "download";
+
+      // 10. Stream the buffer to client with security headers
+      res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+      res.setHeader("Content-Type", fileRecord.mime_type || "application/octet-stream");
+      res.setHeader("Content-Length", String(fileBuffer.length));
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "no-store");
+      res.end(fileBuffer);
+    } catch (error: unknown) {
+      console.error("[Download] Unexpected error:", (error as Error).message);
+      res.status(500).json({ success: false, error: "An unexpected error occurred." });
     }
   }
 );
