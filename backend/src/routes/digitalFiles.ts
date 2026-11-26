@@ -322,6 +322,14 @@ digitalFilesRouter.post(
         } finally {
           conn.release();
         }
+      } catch (unexpectedErr: unknown) {
+        console.error("[Digital File Upload Unexpected Error]:", unexpectedErr);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: "Unexpected error during file upload. Please try again.",
+          });
+        }
       } finally {
         await safeUnlink(tempPath);
       }

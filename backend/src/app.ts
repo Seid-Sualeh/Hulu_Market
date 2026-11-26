@@ -20,6 +20,9 @@ export function createApp(frontendOrigin?: string) {
   const app = express();
   const isProduction = process.env.NODE_ENV === "production";
 
+  // Trust first reverse proxy (Render / Vercel) so req.ip and express-rate-limit work accurately
+  app.set("trust proxy", 1);
+
   // Configure Helmet with relaxed cross-origin resource policy for uploaded media
   app.use(
     helmet({

@@ -234,7 +234,7 @@ escrowDeliveriesRouter.post(
         }
 
         // 3. Upload validated files to private storage adapter
-        const storage = getStorageAdapter();
+        let storage: ReturnType<typeof getStorageAdapter>;
         const storedObjects: Array<{
           entry: ValidatedFileEntry;
           storageKey: string;
@@ -243,6 +243,7 @@ escrowDeliveriesRouter.post(
         }> = [];
 
         try {
+          storage = getStorageAdapter();
           for (const entry of validatedEntries) {
             const putRes = await storage.putObject(entry.buffer, entry.ext);
             storedObjects.push({
@@ -256,7 +257,7 @@ escrowDeliveriesRouter.post(
           // Roll back any objects already written in this batch
           for (const obj of storedObjects) {
             try {
-              await storage.deleteObject(obj.storageKey);
+              await storage!.deleteObject(obj.storageKey);
             } catch (delErr) {
               await recordFailedCleanup(obj.storageKey, listingId, (delErr as Error).message);
             }
@@ -421,6 +422,14 @@ escrowDeliveriesRouter.post(
           });
         } finally {
           conn.release();
+        }
+      } catch (unexpectedErr: unknown) {
+        console.error("[Delivery Upload Unexpected Error]:", unexpectedErr);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: "Unexpected error during file delivery. Please try again.",
+          });
         }
       } finally {
         await safeUnlinkAll(uploadedTempFiles);
