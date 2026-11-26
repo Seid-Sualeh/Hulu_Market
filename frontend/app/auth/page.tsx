@@ -12,10 +12,10 @@ function AuthLanding() {
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get("redirect");
   
-  // Safe redirect for login (never loop back to /auth or /dashboard for guests)
+  // Keep the post-auth destination on a usable page rather than an entry route.
   const signInRedirect = redirectParam && redirectParam !== "/" && redirectParam !== "/dashboard"
     ? redirectParam
-    : "/social-media";
+    : "/marketplace";
 
   return (
     <AuthBackground>
@@ -63,7 +63,7 @@ function AuthLanding() {
         {/* Continue as Guest Link */}
         <div className="pt-1">
           <Link
-            href="/social-media"
+            href="/marketplace"
             className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-teal-400 hover:text-teal-300 transition-colors py-1 hover:underline"
           >
             <Compass size={15} />

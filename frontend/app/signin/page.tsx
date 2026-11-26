@@ -14,7 +14,7 @@ function SignInContent() {
   const redirectParam = searchParams.get("redirect");
   const redirect = redirectParam && redirectParam !== "/" && redirectParam !== "/dashboard"
     ? redirectParam
-    : "/social-media";
+    : "/marketplace";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -178,7 +178,7 @@ function SignInContent() {
 
           {/* Continue as Guest Button */}
           <Link
-            href="/social-media"
+            href="/marketplace"
             className="w-full py-3 rounded-xl border border-white/10 bg-[#111722]/80 hover:bg-[#161d2b] text-slate-200 text-xs md:text-sm font-semibold transition-all flex items-center justify-center gap-2 shadow-sm"
           >
             <Compass className="w-4 h-4 text-teal-400" />

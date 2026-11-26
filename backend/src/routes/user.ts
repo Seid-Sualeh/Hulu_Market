@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import type { RowDataPacket } from "mysql2/promise";
+import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
 import { authenticateToken } from "../middleware/auth.js";
 
@@ -258,17 +258,59 @@ userRouter.delete("/favorites/:channelId", authenticateToken, async (req: Reques
 
 /**
  * GET /api/user/notifications
+ * Returns paginated notifications strictly for the authenticated user.
  */
 userRouter.get("/notifications", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const targetUserId = req.user!.id;
+    const rawLimit = parseInt(String(req.query.limit || "20"), 10);
+    const rawOffset = parseInt(String(req.query.offset || "0"), 10);
+    const limit = isNaN(rawLimit) ? 20 : Math.min(Math.max(rawLimit, 1), 100);
+    const offset = isNaN(rawOffset) ? 0 : Math.max(rawOffset, 0);
+    const typeFilter = req.query.type ? String(req.query.type).trim() : null;
+    const unreadOnly = req.query.unreadOnly === "true";
 
-    const [rows] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 50",
+    const conditions: string[] = ["user_id = ?"];
+    const params: (number | string)[] = [targetUserId];
+
+    if (typeFilter && ["escrow", "wallet", "marketplace", "dispute", "system"].includes(typeFilter)) {
+      conditions.push("type = ?");
+      params.push(typeFilter);
+    }
+    if (unreadOnly) {
+      conditions.push("is_read = FALSE");
+    }
+
+    const whereClause = conditions.join(" AND ");
+
+    const [countRows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total FROM notifications WHERE ${whereClause}`,
+      params
+    );
+    const total = Number(countRows[0]?.total) || 0;
+
+    const [unreadRows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND is_read = FALSE",
       [targetUserId]
     );
+    const unreadCount = Number(unreadRows[0]?.count) || 0;
 
-    res.json({ success: true, notifications: rows });
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, user_id, type, title, message, action_url, action_label, order_id, dispute_id, is_read, created_at
+       FROM notifications
+       WHERE ${whereClause}
+       ORDER BY id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    res.json({
+      success: true,
+      notifications: rows,
+      total,
+      unreadCount,
+      hasMore: offset + rows.length < total,
+    });
   } catch (error: unknown) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }
@@ -292,12 +334,47 @@ userRouter.get("/notifications/unread-count", authenticateToken, async (req: Req
 });
 
 /**
+ * PATCH /api/user/notifications/read-all
+ * Marks all unread notifications for the authenticated user as read.
+ */
+userRouter.patch("/notifications/read-all", authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const targetUserId = req.user!.id;
+    const [result] = await pool.query<ResultSetHeader>(
+      "UPDATE notifications SET is_read = TRUE WHERE user_id = ? AND is_read = FALSE",
+      [targetUserId]
+    );
+    res.json({ success: true, updatedCount: result?.affectedRows ?? 0 });
+  } catch (error: unknown) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+/**
  * PATCH /api/user/notifications/:id/read
+ * Marks a single notification as read after verifying recipient ownership.
  */
 userRouter.patch("/notifications/:id/read", authenticateToken, async (req: Request, res: Response): Promise<void> => {
   try {
     const notifId = parseInt(req.params.id as string, 10);
+    if (isNaN(notifId) || notifId <= 0) {
+      res.status(400).json({ success: false, error: "Invalid notification ID." });
+      return;
+    }
     const targetUserId = req.user!.id;
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT id, user_id FROM notifications WHERE id = ? LIMIT 1",
+      [notifId]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ success: false, error: "Notification not found." });
+      return;
+    }
+    if (Number(rows[0].user_id) !== targetUserId) {
+      res.status(403).json({ success: false, error: "Access denied. Cannot modify another user's notification." });
+      return;
+    }
 
     await pool.query("UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?", [notifId, targetUserId]);
 
@@ -344,3 +421,5 @@ userRouter.get("/admin-status", authenticateToken, async (req: Request, res: Res
     res.status(500).json({ success: false, error: (error as Error).message });
   }
 });
+
+

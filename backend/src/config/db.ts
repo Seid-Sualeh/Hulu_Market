@@ -378,11 +378,34 @@ export async function initDatabase(): Promise<boolean> {
         message TEXT NOT NULL,
         action_url VARCHAR(255) NULL,
         action_label VARCHAR(100) NULL,
+        order_id INT NULL DEFAULT NULL,
+        dispute_id INT NULL DEFAULT NULL,
+        event_key VARCHAR(120) NULL DEFAULT NULL,
         is_read BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_notif_user (user_id)
+        INDEX idx_notif_user (user_id),
+        INDEX idx_notif_user_read (user_id, is_read, id),
+        UNIQUE KEY uq_notif_user_event (user_id, event_key)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Migrate notifications table safely if it already existed
+    await safeAddColumn(conn, "notifications", "order_id", "INT NULL DEFAULT NULL");
+    await safeAddColumn(conn, "notifications", "dispute_id", "INT NULL DEFAULT NULL");
+    await safeAddColumn(conn, "notifications", "event_key", "VARCHAR(120) NULL DEFAULT NULL");
+    await safeAddIndex(conn, "notifications", "idx_notif_user_read", "`user_id`, `is_read`, `id`");
+    try {
+      const [notifIdx]: [RowDataPacket[], unknown] = await conn.query(
+        "SHOW INDEX FROM notifications WHERE Key_name = 'uq_notif_user_event'"
+      );
+      if (notifIdx.length === 0) {
+        await conn.query("ALTER TABLE notifications ADD UNIQUE KEY uq_notif_user_event (user_id, event_key)");
+      }
+    } catch (e: any) {
+      if (e?.code !== "ER_DUP_KEYNAME") {
+        console.warn("[DB Migration] Note on uq_notif_user_event:", e.message);
+      }
+    }
 
     // 7. User Favorites table
     await conn.query(`
@@ -533,6 +556,72 @@ export async function initDatabase(): Promise<boolean> {
         INDEX idx_dofd_buyer (buyer_id),
         CONSTRAINT fk_dofd_order FOREIGN KEY (order_id) REFERENCES escrow_orders(id) ON DELETE CASCADE,
         CONSTRAINT fk_dofd_file FOREIGN KEY (file_id) REFERENCES digital_order_delivery_files(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 14. Disputes & Admin Dispute Handling (Feature 11)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS disputes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        order_id INT NOT NULL,
+        listing_id INT NULL,
+        submitted_by INT NOT NULL,
+        submitted_role ENUM('buyer', 'seller') NOT NULL,
+        category VARCHAR(80) NOT NULL,
+        description TEXT NOT NULL,
+        status ENUM('open', 'under_review', 'awaiting_information', 'resolved', 'rejected') NOT NULL DEFAULT 'open',
+        resolution_outcome ENUM('none', 'buyer_favor', 'seller_favor', 'mutual_agreement', 'dismissed') NOT NULL DEFAULT 'none',
+        resolution_summary TEXT NULL,
+        assigned_admin_id INT NULL,
+        resolved_by INT NULL,
+        resolved_at TIMESTAMP NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_disputes_order (order_id),
+        INDEX idx_disputes_status (status),
+        INDEX idx_disputes_submitter (submitted_by),
+        CONSTRAINT fk_disputes_order FOREIGN KEY (order_id) REFERENCES escrow_orders(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 15. Dispute Audit History & Internal Admin Notes (Feature 11)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS dispute_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        dispute_id INT NOT NULL,
+        actor_id INT NOT NULL,
+        actor_role ENUM('buyer', 'seller', 'admin') NOT NULL,
+        action_type ENUM('created', 'status_change', 'admin_note', 'info_request', 'info_submitted', 'evidence_added', 'resolved', 'rejected') NOT NULL,
+        from_status VARCHAR(40) NULL,
+        to_status VARCHAR(40) NULL,
+        note TEXT NULL,
+        is_internal BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_dh_dispute (dispute_id),
+        CONSTRAINT fk_dh_dispute FOREIGN KEY (dispute_id) REFERENCES disputes(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    // 16. Dispute Evidence Metadata (Private Storage, Feature 11)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS dispute_evidence (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        dispute_id INT NOT NULL,
+        order_id INT NOT NULL,
+        uploaded_by INT NOT NULL,
+        uploader_role ENUM('buyer', 'seller', 'admin') NOT NULL,
+        original_filename VARCHAR(255) NOT NULL,
+        file_format VARCHAR(32) NOT NULL,
+        mime_type VARCHAR(128) NOT NULL,
+        file_size_bytes BIGINT NOT NULL,
+        storage_key VARCHAR(255) NOT NULL,
+        checksum_sha256 VARCHAR(64) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_de_storage_key (storage_key),
+        INDEX idx_de_dispute (dispute_id),
+        INDEX idx_de_order (order_id),
+        CONSTRAINT fk_de_dispute FOREIGN KEY (dispute_id) REFERENCES disputes(id) ON DELETE CASCADE,
+        CONSTRAINT fk_de_order FOREIGN KEY (order_id) REFERENCES escrow_orders(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 

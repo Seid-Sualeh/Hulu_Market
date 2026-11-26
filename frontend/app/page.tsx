@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import DashboardView from "./dashboard/DashboardView";
 import AuthPage from "./auth/page";
 
 export default function RootPage() {
@@ -17,6 +16,8 @@ export default function RootPage() {
       } else if (user?.role === "admin") {
         // Admin root landing is the Admin Control page (/admin)
         router.replace("/admin");
+      } else {
+        router.replace("/marketplace");
       }
     }
   }, [mounted, signedIn, user?.role, router]);
@@ -35,6 +36,5 @@ export default function RootPage() {
     return null;
   }
 
-  // Only logged in regular users see the private user dashboard
-  return <DashboardView />;
+  return null;
 }

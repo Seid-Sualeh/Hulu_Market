@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../config/db.js";
 import { authenticateToken, requireAdmin } from "../middleware/auth.js";
+import { createNotification } from "../services/notifications.js";
 
 export const escrowRouter = Router();
 
@@ -138,19 +139,31 @@ escrowRouter.post("/order", authenticateToken, async (req: Request, res: Respons
       ]
     );
 
-    // 6. Notify seller
+    // 6. Notify seller & buyer
     if (targetSellerId) {
-      try {
-        await conn.query(
-          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
-           VALUES (?, 'escrow', 'Buyer Initiated Channel Purchase! 🎉', ?, '/inbox', 'Open Escrow Chat')`,
-          [
-            targetSellerId,
-            `A buyer has initiated a purchase of your channel "${channel.name}" for ${verifiedPrice} ETB. The payment is secured in escrow. Please open your Inbox to coordinate ownership transfer.`,
-          ]
-        );
-      } catch {}
+      await createNotification({
+        userId: targetSellerId,
+        type: "escrow",
+        title: "Buyer Initiated Channel Purchase! 🎉",
+        message: `A buyer has initiated a purchase of your channel "${channel.name}" for ${verifiedPrice} ETB. The payment is secured in escrow. Please open your Inbox to coordinate ownership transfer.`,
+        actionUrl: `/inbox?orderId=${orderId}`,
+        actionLabel: "Open Escrow Chat",
+        orderId,
+        eventKey: `order_created_seller_${orderId}`,
+        conn,
+      });
     }
+    await createNotification({
+      userId: bId,
+      type: "escrow",
+      title: "Purchase Submitted — Escrow Active",
+      message: `Your purchase of "${channel.name}" for ${verifiedPrice} ETB (Order #${orderId}) has been submitted and funds are held safely in escrow.`,
+      actionUrl: `/inbox?orderId=${orderId}`,
+      actionLabel: "Open Escrow Chat",
+      orderId,
+      eventKey: `order_created_buyer_${orderId}`,
+      conn,
+    });
 
     await conn.commit();
 
@@ -335,19 +348,31 @@ escrowRouter.post("/order/digital", authenticateToken, async (req: Request, res:
       ]
     );
 
-    // 13. Notify seller
+    // 13. Notify seller & buyer
     if (targetSellerId) {
-      try {
-        await conn.query(
-          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
-           VALUES (?, 'escrow', 'New Digital Product Purchase! 🎉', ?, '/inbox', 'Open Trade Chat')`,
-          [
-            targetSellerId,
-            `A buyer has purchased your digital product "${channel.name}" for ${verifiedPrice} ETB. The payment is held in escrow. Please open your Inbox to coordinate with the buyer.`,
-          ]
-        );
-      } catch {}
+      await createNotification({
+        userId: targetSellerId,
+        type: "escrow",
+        title: "New Digital Product Purchase! 🎉",
+        message: `A buyer has purchased your digital product "${channel.name}" for ${verifiedPrice} ETB. The payment is held in escrow. Please open your Inbox to deliver files.`,
+        actionUrl: `/inbox?orderId=${orderId}`,
+        actionLabel: "Open Trade Chat",
+        orderId,
+        eventKey: `order_created_seller_${orderId}`,
+        conn,
+      });
     }
+    await createNotification({
+      userId: bId,
+      type: "escrow",
+      title: "Digital Purchase Submitted — Escrow Active",
+      message: `Your purchase of "${channel.name}" for ${verifiedPrice} ETB (Order #${orderId}) has been submitted and funds are held safely in escrow.`,
+      actionUrl: `/inbox?orderId=${orderId}`,
+      actionLabel: "Open Trade Chat",
+      orderId,
+      eventKey: `order_created_buyer_${orderId}`,
+      conn,
+    });
 
     await conn.commit();
 
@@ -760,6 +785,31 @@ escrowRouter.patch("/orders/:id/action", requireAdmin, async (req: Request, res:
         ]
       );
 
+      await createNotification({
+        userId: Number(order.buyer_id),
+        type: "escrow",
+        title: "Escrow Order Approved",
+        message: `Order #${orderId} ("${order.channel_name}") has been approved by admin.`,
+        actionUrl: `/inbox?orderId=${orderId}`,
+        actionLabel: "View Order",
+        orderId,
+        eventKey: `order_action_approve_buyer_${orderId}`,
+        conn,
+      });
+      if (order.seller_id) {
+        await createNotification({
+          userId: Number(order.seller_id),
+          type: "escrow",
+          title: "Escrow Funds Released",
+          message: `Order #${orderId} ("${order.channel_name}") was approved and ${order.amount} ETB was released to your balance.`,
+          actionUrl: `/inbox?orderId=${orderId}`,
+          actionLabel: "View Order",
+          orderId,
+          eventKey: `order_action_approve_seller_${orderId}`,
+          conn,
+        });
+      }
+
       await conn.commit();
 
       res.json({
@@ -797,6 +847,31 @@ escrowRouter.patch("/orders/:id/action", requireAdmin, async (req: Request, res:
           `Trade Cancelled by Admin. Reason: ${adminNotes || "Trade cancelled"}. All funds (${order.amount} ETB) have been refunded to the buyer's balance.`,
         ]
       );
+
+      await createNotification({
+        userId: Number(order.buyer_id),
+        type: "escrow",
+        title: "Escrow Order Cancelled & Refunded",
+        message: `Order #${orderId} ("${order.channel_name}") was cancelled by admin. ${order.amount} ETB has been refunded to your wallet.`,
+        actionUrl: `/inbox?orderId=${orderId}`,
+        actionLabel: "View Order",
+        orderId,
+        eventKey: `order_action_cancel_buyer_${orderId}`,
+        conn,
+      });
+      if (order.seller_id) {
+        await createNotification({
+          userId: Number(order.seller_id),
+          type: "escrow",
+          title: "Escrow Order Cancelled",
+          message: `Order #${orderId} ("${order.channel_name}") was cancelled by admin.`,
+          actionUrl: `/inbox?orderId=${orderId}`,
+          actionLabel: "View Order",
+          orderId,
+          eventKey: `order_action_cancel_seller_${orderId}`,
+          conn,
+        });
+      }
 
       await conn.commit();
 
@@ -1008,6 +1083,33 @@ escrowRouter.patch("/orders/:id/confirm", authenticateToken, async (req: Request
       );
     }
 
+    // Notify the other party of confirmation (deduplicated per order + role)
+    if (role === "buyer" && order.seller_id) {
+      await createNotification({
+        userId: Number(order.seller_id),
+        type: "escrow",
+        title: "Buyer Confirmed Completion",
+        message: `The buyer has confirmed completion on Order #${orderId} ("${order.channel_name}").`,
+        actionUrl: `/inbox?orderId=${orderId}`,
+        actionLabel: "Open Trade Chat",
+        orderId,
+        eventKey: `order_buyer_confirmed_${orderId}`,
+        conn,
+      });
+    } else if (role === "seller") {
+      await createNotification({
+        userId: Number(order.buyer_id),
+        type: "escrow",
+        title: "Seller Confirmed Completion",
+        message: `The seller has confirmed completion on Order #${orderId} ("${order.channel_name}").`,
+        actionUrl: `/inbox?orderId=${orderId}`,
+        actionLabel: "Open Trade Chat",
+        orderId,
+        eventKey: `order_seller_confirmed_${orderId}`,
+        conn,
+      });
+    }
+
     await conn.commit();
 
     res.json({
@@ -1181,29 +1283,31 @@ escrowRouter.patch("/orders/:id/close", requireAdmin, async (req: Request, res: 
     );
 
     // Notify buyer of closure
-    try {
-      await conn.query(
-        `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
-         VALUES (?, 'escrow', 'Trade Closed ✅', ?, '/inbox', 'View Trade')`,
-        [
-          order.buyer_id,
-          `Your escrow trade #${orderId} for "${order.channel_name}" has been closed by admin. The transaction is complete. Thank you for using Hulu Market!`,
-        ]
-      );
-    } catch {}
+    await createNotification({
+      userId: Number(order.buyer_id),
+      type: "escrow",
+      title: "Trade Closed ✅",
+      message: `Your escrow trade #${orderId} for "${order.channel_name}" has been closed by admin. The transaction is complete. Thank you for using Hulu Market!`,
+      actionUrl: `/inbox?orderId=${orderId}`,
+      actionLabel: "View Trade",
+      orderId,
+      eventKey: `order_closed_buyer_${orderId}`,
+      conn,
+    });
 
     // Notify seller of closure
     if (order.seller_id) {
-      try {
-        await conn.query(
-          `INSERT INTO notifications (user_id, type, title, message, action_url, action_label)
-           VALUES (?, 'escrow', 'Trade Closed ✅', ?, '/inbox', 'View Trade')`,
-          [
-            order.seller_id,
-            `Your escrow trade #${orderId} for "${order.channel_name}" has been closed by admin. The funds of ${order.amount} ETB have been released to your account. Thank you!`,
-          ]
-        );
-      } catch {}
+      await createNotification({
+        userId: Number(order.seller_id),
+        type: "escrow",
+        title: "Trade Closed ✅",
+        message: `Your escrow trade #${orderId} for "${order.channel_name}" has been closed by admin. The funds of ${order.amount} ETB have been released to your account. Thank you!`,
+        actionUrl: `/inbox?orderId=${orderId}`,
+        actionLabel: "View Trade",
+        orderId,
+        eventKey: `order_closed_seller_${orderId}`,
+        conn,
+      });
     }
 
     await conn.commit();

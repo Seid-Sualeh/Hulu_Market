@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  ChevronDown,
   Coins,
   LogIn,
   LogOut,
@@ -91,111 +90,29 @@ function NavigationEntryItem({
   item,
   pathname,
   onNavigate,
-  controlId,
   signedIn = false,
   badgeCount,
 }: {
   item: NavigationEntry;
   pathname: string;
   onNavigate?: () => void;
-  controlId: string;
   signedIn?: boolean;
   badgeCount?: number;
 }) {
-  const isAnyChildActive =
-    item.type === "group" &&
-    (item.items.some((child) => isCurrentPath(pathname, child.href)) ||
-      pathname === "/social-media" ||
-      pathname.startsWith("/social-media/") ||
-      pathname.startsWith("/marketplace"));
-
-  const [expanded, setExpanded] = useState<boolean>(false);
-
-  if (item.type === "link") {
-    return (
-      <NavigationLinkItem
-        item={item}
-        pathname={pathname}
-        onNavigate={onNavigate}
-        signedIn={signedIn}
-        badgeCount={badgeCount}
-      />
-    );
-  }
-
-  const Icon = item.icon;
-
   return (
-    <div>
-      <div
-        className={`group flex min-h-10 w-full items-center justify-between rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 ${
-          isAnyChildActive
-            ? "bg-teal-500/15 text-teal-300 ring-1 ring-inset ring-teal-500/30 font-semibold shadow-sm shadow-teal-950/40"
-            : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
-        }`}
-      >
-        <Link
-          href="/social-media"
-          onClick={onNavigate}
-          className="flex flex-1 items-center gap-3 min-w-0"
-        >
-          <Icon
-            aria-hidden="true"
-            size={18}
-            strokeWidth={isAnyChildActive ? 2.2 : 1.8}
-            className={
-              isAnyChildActive
-                ? "shrink-0 text-teal-400"
-                : "shrink-0 text-slate-500 transition-colors group-hover:text-slate-300"
-            }
-          />
-          <span className="min-w-0 flex-1 truncate font-semibold">
-            {item.label}
-          </span>
-        </Link>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={controlId}
-          onClick={(e) => {
-            e.stopPropagation();
-            setExpanded(!expanded);
-          }}
-          className="p-1 text-slate-500 hover:text-teal-300 transition"
-        >
-          <ChevronDown
-            aria-hidden="true"
-            size={15}
-            className={`shrink-0 transition-transform duration-200 ${
-              expanded ? "rotate-180 text-teal-400" : ""
-            }`}
-          />
-        </button>
-      </div>
-      {expanded && (
-        <div
-          id={controlId}
-          className="ml-4 mt-1.5 space-y-0.5 border-l border-teal-500/20 pl-2.5"
-        >
-          {item.items.map((child) => (
-            <NavigationLinkItem
-              key={child.href}
-              item={child}
-              pathname={pathname}
-              onNavigate={onNavigate}
-              signedIn={signedIn}
-              isChild
-            />
-          ))}
-        </div>
-      )}
-    </div>
+    <NavigationLinkItem
+      item={item}
+      pathname={pathname}
+      onNavigate={onNavigate}
+      signedIn={signedIn}
+      badgeCount={badgeCount}
+    />
   );
 }
 
 export function SidebarBrand() {
   const { user, signedIn, mounted } = useAuth();
-  const brandHref = mounted && signedIn && user?.role === "admin" ? "/admin" : "/";
+  const brandHref = mounted && signedIn && user?.role === "admin" ? "/admin" : "/marketplace";
 
   return (
     <Link
@@ -271,10 +188,8 @@ export function GuestSignInFooter({ onNavigate }: { onNavigate?: () => void }) {
 
 export function SidebarNavigation({
   onNavigate,
-  idPrefix = "sidebar",
 }: {
   onNavigate?: () => void;
-  idPrefix?: string;
 }) {
   const pathname = usePathname() ?? "/";
   const { user, signedIn, mounted } = useAuth();
@@ -367,7 +282,7 @@ export function SidebarNavigation({
               </h2>
             )}
             <div className="space-y-1">
-              {section.items.map((item, index) => (
+              {section.items.map((item) => (
                 <NavigationEntryItem
                   key={item.label}
                   item={item}
@@ -375,7 +290,6 @@ export function SidebarNavigation({
                   onNavigate={onNavigate}
                   signedIn={mounted ? signedIn : false}
                   badgeCount={getBadgeCount(item)}
-                  controlId={`${idPrefix}-nav-${index}`}
                 />
               ))}
             </div>
@@ -403,7 +317,7 @@ export default function Sidebar() {
         <SidebarBrand />
       </div>
       <div className="mx-5 border-t border-white/[0.06]" />
-      <SidebarNavigation idPrefix="desktop" />
+      <SidebarNavigation />
     </aside>
   );
 }

@@ -8,6 +8,7 @@ import {
   AlertCircle,
   ArrowDownLeft,
   ArrowUpRight,
+  Bell,
   BookOpen,
   Check,
   CheckCircle2,
@@ -44,7 +45,7 @@ function formatUploadUrl(url?: string | null): string {
   return resolveImageUrl(url);
 }
 
-type AdminTab = "overview" | "approvals" | "inbox" | "users" | "channels" | "transactions";
+type AdminTab = "overview" | "approvals" | "inbox" | "disputes" | "users" | "channels" | "transactions";
 
 interface AdminStats {
   totalUsers: number;
@@ -176,6 +177,17 @@ export default function AdminDashboardPage() {
   const [channelsList, setChannelsList] = useState<ChannelRecord[]>([]);
   const [txList, setTxList] = useState<TransactionRecord[]>([]);
   const [escrowOrders, setEscrowOrders] = useState<EscrowOrderRecord[]>([]);
+  const [disputesList, setDisputesList] = useState<any[]>([]);
+  const [adminNotifications, setAdminNotifications] = useState<any[]>([]);
+  const [disputeStatusFilter, setDisputeStatusFilter] = useState<string>("all");
+  const [disputeSearch, setDisputeSearch] = useState("");
+  const [selectedDispute, setSelectedDispute] = useState<any | null>(null);
+  const [disputeHistory, setDisputeHistory] = useState<any[]>([]);
+  const [disputeEvidence, setDisputeEvidence] = useState<any[]>([]);
+  const [internalNoteInput, setInternalNoteInput] = useState("");
+  const [statusNoteInput, setStatusNoteInput] = useState("");
+  const [resolutionOutcomeInput, setResolutionOutcomeInput] = useState("buyer_favor");
+  const [disputeActionLoading, setDisputeActionLoading] = useState(false);
 
   // Escrow chat modal state
   const [activeEscrowTrade, setActiveEscrowTrade] = useState<EscrowOrderRecord | null>(null);
@@ -259,6 +271,22 @@ export default function AdminDashboardPage() {
           );
         }
       }
+
+      // 6. Disputes & Admin Notifications (Feature 11)
+      const dispRes = await fetchBackend("disputes/admin");
+      if (dispRes.ok) {
+        const dispData = await dispRes.json();
+        if (dispData.success && Array.isArray(dispData.disputes)) {
+          setDisputesList(dispData.disputes);
+        }
+      }
+      const notifRes = await fetchBackend("user/notifications?limit=10");
+      if (notifRes.ok) {
+        const notifData = await notifRes.json();
+        if (notifData.success && Array.isArray(notifData.notifications)) {
+          setAdminNotifications(notifData.notifications);
+        }
+      }
     } catch (err: unknown) {
       console.debug("Admin load error:", err);
     } finally {
@@ -275,6 +303,93 @@ export default function AdminDashboardPage() {
       loadAdminData();
     }
   }, [mounted, signedIn, router]);
+
+  // Feature 11: Admin dispute helpers
+  const openDisputeDetail = async (disputeId: number) => {
+    try {
+      const res = await fetchBackend(`disputes/${disputeId}`);
+      const data = await res.json();
+      if (data.success) {
+        setSelectedDispute(data.dispute);
+        setDisputeHistory(Array.isArray(data.history) ? data.history : []);
+        setDisputeEvidence(Array.isArray(data.evidence) ? data.evidence : []);
+        setInternalNoteInput("");
+        setStatusNoteInput("");
+      }
+    } catch {}
+  };
+
+  const handleDisputeStatusChange = async (disputeId: number, status: string) => {
+    setDisputeActionLoading(true);
+    try {
+      const res = await fetchBackend(`disputes/${disputeId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status,
+          note: statusNoteInput.trim() || undefined,
+          resolutionOutcome: status === "resolved" || status === "rejected" ? resolutionOutcomeInput : "none",
+          resolutionSummary: statusNoteInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFeedback({ type: "success", text: data.message });
+        await loadAdminData();
+        await openDisputeDetail(disputeId);
+      } else {
+        setFeedback({ type: "error", text: data.error || "Failed to update dispute status." });
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Network error updating dispute." });
+    } finally {
+      setDisputeActionLoading(false);
+    }
+  };
+
+  const handleAddInternalNote = async (disputeId: number) => {
+    if (internalNoteInput.trim().length < 2) return;
+    setDisputeActionLoading(true);
+    try {
+      const res = await fetchBackend(`disputes/${disputeId}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: internalNoteInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInternalNoteInput("");
+        await openDisputeDetail(disputeId);
+      } else {
+        setFeedback({ type: "error", text: data.error || "Failed to add internal note." });
+      }
+    } catch {
+      setFeedback({ type: "error", text: "Network error adding internal note." });
+    } finally {
+      setDisputeActionLoading(false);
+    }
+  };
+
+  const handleDownloadEvidence = async (disputeId: number, evidenceId: number, filename: string) => {
+    try {
+      const res = await fetchBackend(`disputes/${disputeId}/evidence/${evidenceId}/download`);
+      if (!res.ok) {
+        alert("Failed to download evidence.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Network error downloading evidence.");
+    }
+  };
 
   // Open escrow mediation chat
   const openEscrowMediation = async (order: EscrowOrderRecord) => {
@@ -687,6 +802,12 @@ export default function AdminDashboardPage() {
           { id: "overview", label: "Overview", icon: Activity, badge: null },
           { id: "approvals", label: "Approvals Hub", icon: CheckCircle2, badge: totalPendingRequests },
           { id: "inbox", label: "Inbox & Escrow", icon: MessageSquare, badge: pendingEscrows.length || null },
+          {
+            id: "disputes",
+            label: "Disputes",
+            icon: ShieldAlert,
+            badge: disputesList.filter((d) => ["open", "under_review", "awaiting_information"].includes(d.status)).length || null,
+          },
           { id: "users", label: `Users (${usersList.length || stats.totalUsers})`, icon: Users, badge: null },
           { id: "channels", label: `Channels (${channelsList.length || stats.totalChannels})`, icon: Layers, badge: pendingChannels.length || null },
           { id: "transactions", label: `Transactions (${txList.length || stats.totalTransactions})`, icon: Wallet, badge: (pendingDeposits.length + pendingWithdrawals.length) || null },
@@ -1445,6 +1566,257 @@ export default function AdminDashboardPage() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* TAB: DISPUTES & ADMIN NOTIFICATIONS (Feature 11) */}
+      {activeTab === "disputes" && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {adminNotifications.length > 0 && (
+            <div className="rounded-2xl border border-amber-500/20 bg-[#111722] p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Bell size={14} />
+                  <span>Recent Admin Alerts</span>
+                </h3>
+                <Link href="/notifications" className="text-[11px] text-teal-400 hover:underline">
+                  Open Notification Center
+                </Link>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {adminNotifications.slice(0, 4).map((n: any) => (
+                  <div key={n.id} className="rounded-xl border border-white/[0.06] bg-[#0b0f17] p-2.5 text-[11px]">
+                    <p className="font-semibold text-white">{n.title}</p>
+                    <p className="text-slate-400 line-clamp-2">{n.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-white">Escrow Dispute Management</h2>
+                <p className="text-xs text-slate-400">
+                  Review disputes, evidence, and internal notes. Financial settlement &amp; chat closure remain governed by Escrow Controls.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={disputeStatusFilter}
+                  onChange={(e) => setDisputeStatusFilter(e.target.value)}
+                  className="rounded-xl border border-white/10 bg-[#0b0f17] px-3 py-1.5 text-xs text-white focus:outline-none"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="open">Open</option>
+                  <option value="under_review">Under Review</option>
+                  <option value="awaiting_information">Awaiting Info</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <input
+                  type="text"
+                  value={disputeSearch}
+                  onChange={(e) => setDisputeSearch(e.target.value)}
+                  placeholder="Search order, category..."
+                  className="rounded-xl border border-white/10 bg-[#0b0f17] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {disputesList
+                .filter((d) => disputeStatusFilter === "all" || d.status === disputeStatusFilter)
+                .filter((d) => {
+                  const q = disputeSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    String(d.order_id).includes(q) ||
+                    String(d.channel_name || "").toLowerCase().includes(q) ||
+                    String(d.category || "").toLowerCase().includes(q) ||
+                    String(d.description || "").toLowerCase().includes(q)
+                  );
+                })
+                .map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-[#0b0f17] p-4 hover:border-amber-400/30 transition"
+                  >
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs font-bold text-rose-400">Dispute #{d.id}</span>
+                        <span className="font-mono text-xs text-amber-300">Order #{d.order_id}</span>
+                        <span className="text-xs font-bold text-white">{d.channel_name}</span>
+                        <span className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-300">
+                          {String(d.status).replace(/_/g, " ")}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-1">{d.description}</p>
+                      <p className="text-[10px] text-slate-500">
+                        Submitted by {d.submitted_role} &bull; Category: {d.category} &bull; Amount: {Number(d.amount).toLocaleString()} ETB
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openDisputeDetail(d.id)}
+                      className="rounded-xl bg-amber-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300 transition shrink-0"
+                    >
+                      Review Case
+                    </button>
+                  </div>
+                ))}
+              {disputesList.length === 0 && (
+                <p className="text-center text-xs text-slate-500 py-8">No disputes submitted yet.</p>
+              )}
+            </div>
+          </div>
+
+          {selectedDispute && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#0c1017] p-6 space-y-5 shadow-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-white">
+                      Dispute #{selectedDispute.id} &bull; Order #{selectedDispute.order_id} ({selectedDispute.channel_name})
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Status: <strong className="text-amber-300">{String(selectedDispute.status).replace(/_/g, " ").toUpperCase()}</strong> &bull;{" "}
+                      Buyer: {selectedDispute.buyer_name} ({selectedDispute.buyer_confirmed ? "Confirmed" : "Pending"}) &bull;{" "}
+                      Seller: {selectedDispute.seller_name} ({selectedDispute.seller_confirmed ? "Confirmed" : "Pending"})
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setSelectedDispute(null)} className="text-slate-400 hover:text-white">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="rounded-xl border border-white/[0.06] bg-[#111722] p-3.5 text-xs space-y-1">
+                  <p className="font-semibold text-slate-300">Category: {selectedDispute.category} (by {selectedDispute.submitted_role})</p>
+                  <p className="text-slate-200 whitespace-pre-wrap">{selectedDispute.description}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-300">Evidence Files ({disputeEvidence.length})</h4>
+                  {disputeEvidence.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {disputeEvidence.map((ev: any) => (
+                        <div key={ev.id} className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-[#111722] px-3 py-2 text-xs">
+                          <span className="text-slate-200 truncate">{ev.original_filename} ({ev.file_format}, {ev.uploader_role})</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadEvidence(selectedDispute.id, ev.id, ev.original_filename)}
+                            className="rounded-lg bg-teal-500/20 border border-teal-500/30 px-2.5 py-1 text-[11px] font-bold text-teal-300 hover:bg-teal-500/30"
+                          >
+                            Download
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500">No evidence files attached.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-300">Audit History &amp; Internal Admin Notes</h4>
+                  <div className="max-h-44 overflow-y-auto space-y-1.5 rounded-xl border border-white/[0.06] bg-[#111722] p-3">
+                    {disputeHistory.map((h: any) => (
+                      <div key={h.id} className={`rounded-lg px-2.5 py-1.5 text-[11px] ${h.is_internal ? "bg-amber-500/10 border border-amber-500/25 text-amber-200" : "bg-white/[0.03] text-slate-300"}`}>
+                        <span className="font-bold uppercase text-[10px] mr-1.5">
+                          [{h.actor_role}{h.is_internal ? " • INTERNAL NOTE" : ""}]
+                        </span>
+                        <span>{h.note}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={internalNoteInput}
+                      onChange={(e) => setInternalNoteInput(e.target.value)}
+                      placeholder="Add internal admin-only note..."
+                      className="flex-1 rounded-xl border border-white/10 bg-[#111722] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={disputeActionLoading}
+                      onClick={() => handleAddInternalNote(selectedDispute.id)}
+                      className="rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/25 disabled:opacity-50"
+                    >
+                      Save Internal Note
+                    </button>
+                  </div>
+                </div>
+
+                {["open", "under_review", "awaiting_information"].includes(selectedDispute.status) && (
+                  <div className="rounded-xl border border-white/[0.08] bg-[#111722] p-4 space-y-3">
+                    <h4 className="text-xs font-bold text-white">Update Status / Resolve Dispute</h4>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <input
+                        type="text"
+                        value={statusNoteInput}
+                        onChange={(e) => setStatusNoteInput(e.target.value)}
+                        placeholder="Public note / resolution summary..."
+                        className="rounded-xl border border-white/10 bg-[#0b0f17] px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none"
+                      />
+                      <select
+                        value={resolutionOutcomeInput}
+                        onChange={(e) => setResolutionOutcomeInput(e.target.value)}
+                        className="rounded-xl border border-white/10 bg-[#0b0f17] px-3 py-1.5 text-xs text-white focus:outline-none"
+                      >
+                        <option value="buyer_favor">Outcome: Buyer Favor</option>
+                        <option value="seller_favor">Outcome: Seller Favor</option>
+                        <option value="mutual_agreement">Outcome: Mutual Agreement</option>
+                        <option value="dismissed">Outcome: Dismissed</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedDispute.status === "open" && (
+                        <button
+                          type="button"
+                          disabled={disputeActionLoading}
+                          onClick={() => handleDisputeStatusChange(selectedDispute.id, "under_review")}
+                          className="rounded-xl bg-sky-500/20 border border-sky-500/30 px-3 py-1.5 text-xs font-bold text-sky-300 hover:bg-sky-500/30 disabled:opacity-50"
+                        >
+                          Mark Under Review
+                        </button>
+                      )}
+                      {selectedDispute.status !== "awaiting_information" && (
+                        <button
+                          type="button"
+                          disabled={disputeActionLoading}
+                          onClick={() => handleDisputeStatusChange(selectedDispute.id, "awaiting_information")}
+                          className="rounded-xl bg-amber-500/20 border border-amber-500/30 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/30 disabled:opacity-50"
+                        >
+                          Request Info
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={disputeActionLoading}
+                        onClick={() => handleDisputeStatusChange(selectedDispute.id, "resolved")}
+                        className="rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                      >
+                        Resolve Dispute
+                      </button>
+                      <button
+                        type="button"
+                        disabled={disputeActionLoading}
+                        onClick={() => handleDisputeStatusChange(selectedDispute.id, "rejected")}
+                        className="rounded-xl bg-rose-500/20 border border-rose-500/30 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/30 disabled:opacity-50"
+                      >
+                        Reject Dispute
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      Note: Resolving a dispute documents the decision only. Use the Inbox &amp; Escrow tab to release/refund funds or close chat after both confirmations.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

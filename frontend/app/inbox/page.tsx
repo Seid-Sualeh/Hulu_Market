@@ -141,6 +141,16 @@ export default function InboxPage() {
   const [closingChat, setClosingChat] = useState(false);
   const [showAdminCloseConfirm, setShowAdminCloseConfirm] = useState(false);
 
+  // Feature 11: Order dispute state
+  const [orderDispute, setOrderDispute] = useState<any | null>(null);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [disputeCategory, setDisputeCategory] = useState("non_delivery");
+  const [disputeDescription, setDisputeDescription] = useState("");
+  const [disputeFiles, setDisputeFiles] = useState<File[]>([]);
+  const [submittingDispute, setSubmittingDispute] = useState(false);
+  const [disputeError, setDisputeError] = useState<string | null>(null);
+  const [disputeInfoNote, setDisputeInfoNote] = useState("");
+
   // Participants online status (for escrow order chat header)
   const [participantsStatus, setParticipantsStatus] = useState<{
     buyer: { isOnline: boolean; label: string } | null;
@@ -324,12 +334,26 @@ export default function InboxPage() {
     setDownloadError(null);
     setShowReceiptConfirm(false);
     setShowAdminCloseConfirm(false);
+    setOrderDispute(null);
+    setShowDisputeModal(false);
+    setDisputeError(null);
 
     if (order.listingType === "ebooks-digital") {
       fetchDeliveries(order.id);
     } else {
       setOrderDeliveries([]);
     }
+
+    // Fetch existing dispute for this order (Feature 11)
+    fetchBackend("disputes/my")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && Array.isArray(d.disputes)) {
+          const found = d.disputes.find((item: any) => Number(item.order_id) === order.id);
+          if (found) setOrderDispute(found);
+        }
+      })
+      .catch(() => {});
 
     try {
       const res = await fetchBackend(`escrow/orders/${order.id}/messages`);
@@ -590,6 +614,68 @@ export default function InboxPage() {
     }
   };
 
+  // Feature 11: Submit new dispute + optional evidence
+  const handleSubmitDispute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrder) return;
+    setDisputeError(null);
+    if (disputeDescription.trim().length < 10) {
+      setDisputeError("Please describe the issue in at least 10 characters.");
+      return;
+    }
+    setSubmittingDispute(true);
+    try {
+      const res = await fetchBackend("disputes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: selectedOrder.id,
+          category: disputeCategory,
+          description: disputeDescription.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setDisputeError(data.error || "Failed to submit dispute.");
+        return;
+      }
+      const created = data.dispute;
+      if (disputeFiles.length > 0 && created?.id) {
+        const fd = new FormData();
+        disputeFiles.slice(0, 3).forEach((f) => fd.append("files", f));
+        await fetchBackend(`disputes/${created.id}/evidence`, { method: "POST", body: fd }).catch(() => {});
+      }
+      setOrderDispute(created);
+      setDisputeDescription("");
+      setDisputeFiles([]);
+      setShowDisputeModal(false);
+    } catch {
+      setDisputeError("Network error while submitting dispute.");
+    } finally {
+      setSubmittingDispute(false);
+    }
+  };
+
+  const handleSubmitDisputeInfo = async () => {
+    if (!orderDispute || disputeInfoNote.trim().length < 3) return;
+    try {
+      const res = await fetchBackend(`disputes/${orderDispute.id}/info`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: disputeInfoNote.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDisputeInfoNote("");
+        alert("Additional information submitted to admin.");
+      } else {
+        alert(data.error || "Failed to submit info.");
+      }
+    } catch {
+      alert("Network error.");
+    }
+  };
+
   const handleSendAdminSupport = (e: React.FormEvent) => {    e.preventDefault();
     if (!adminChatInput.trim()) return;
     const userMsg = adminChatInput.trim();
@@ -767,7 +853,11 @@ export default function InboxPage() {
               onClick={() => setActiveTab(tab)}
               className={`flex items-center justify-center gap-2 rounded-xl py-2.5 transition-all ${
                 activeTab === tab
-                  ? "bg-[#00A3FF] text-white font-bold shadow-md shadow-[#00A3FF]/25"
+                  ? tab === "processing"
+                    ? "bg-[#00A3FF] text-white font-bold shadow-md shadow-[#00A3FF]/25"
+                    : tab === "success"
+                    ? "bg-emerald-600 text-white font-bold shadow-md shadow-emerald-600/25"
+                    : "bg-red-600 text-white font-bold shadow-md shadow-red-600/25"
                   : "text-slate-400 hover:text-white"
               }`}
             >
@@ -798,6 +888,17 @@ export default function InboxPage() {
                       <h4 className="text-sm font-bold text-white">{order.channelName}</h4>
                       <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[9px] font-bold text-cyan-400">
                         {order.platform}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${
+                          order.status === "cancelled"
+                            ? "border-red-500/30 bg-red-500/10 text-red-400"
+                            : order.status === "success" || order.isClosed
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                            : "border-blue-500/30 bg-blue-500/10 text-blue-400"
+                        }`}
+                      >
+                        {order.status === "cancelled" ? "Cancelled" : order.status === "success" || order.isClosed ? "Completed" : "Processing"}
                       </span>
                       {order.isClosed && (
                         <span className="flex items-center gap-1 rounded-full bg-slate-500/20 border border-slate-500/30 px-2 py-0.5 text-[9px] font-bold text-slate-400">
@@ -870,7 +971,11 @@ export default function InboxPage() {
                       <span className="font-bold text-amber-300">{selectedOrder.price}</span>
                       <span className="text-slate-600">&bull;</span>
                       <span className={`text-[10px] font-bold uppercase tracking-wider ${
-                        selectedOrder.isClosed ? "text-slate-400" : selectedOrder.status === "processing" ? "text-teal-400" : "text-emerald-400"
+                        selectedOrder.status === "cancelled"
+                          ? "text-red-400"
+                          : selectedOrder.status === "success" || selectedOrder.isClosed
+                          ? "text-emerald-400"
+                          : "text-blue-400"
                       }`}>
                         {selectedOrder.isClosed ? "CLOSED" : selectedOrder.status}
                       </span>
@@ -878,14 +983,28 @@ export default function InboxPage() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedOrder(null)}
-                  className="shrink-0 grid size-8 place-items-center rounded-xl text-slate-400 hover:bg-white/10 hover:text-white transition"
-                  title="Close modal"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!selectedOrder.isClosed &&
+                    selectedOrder.status === "processing" &&
+                    (isBuyer(selectedOrder) || isSeller(selectedOrder)) &&
+                    !orderDispute && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDisputeModal(true)}
+                        className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-bold text-rose-300 hover:bg-rose-500/20 transition"
+                      >
+                        Report Dispute
+                      </button>
+                    )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrder(null)}
+                    className="shrink-0 grid size-8 place-items-center rounded-xl text-slate-400 hover:bg-white/10 hover:text-white transition"
+                    title="Close modal"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
               </div>
 
               {/* Status and 3-Way Participants row with real online/last-seen indicators */}
@@ -939,6 +1058,41 @@ export default function InboxPage() {
                 </div>
               </div>
             </div>
+
+            {/* Feature 11: Active/Resolved Dispute Status Banner */}
+            {orderDispute && (
+              <div className="shrink-0 border-b border-rose-500/25 bg-rose-950/25 px-4 py-2 text-[11px] space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-rose-300">
+                    Dispute #{orderDispute.id} &bull; Status: {String(orderDispute.status).replace(/_/g, " ").toUpperCase()}
+                  </span>
+                  {orderDispute.resolution_summary && (
+                    <span className="text-slate-300 truncate max-w-[260px]" title={orderDispute.resolution_summary}>
+                      Outcome: {orderDispute.resolution_summary}
+                    </span>
+                  )}
+                </div>
+                {["open", "under_review", "awaiting_information"].includes(orderDispute.status) &&
+                  (isBuyer(selectedOrder) || isSeller(selectedOrder)) && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={disputeInfoNote}
+                        onChange={(e) => setDisputeInfoNote(e.target.value)}
+                        placeholder="Submit additional info for admin review..."
+                        className="flex-1 rounded-lg border border-white/10 bg-[#0c1017] px-2.5 py-1 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSubmitDisputeInfo}
+                        className="rounded-lg bg-rose-500/20 border border-rose-500/30 px-2.5 py-1 text-[11px] font-semibold text-rose-200 hover:bg-rose-500/30 transition"
+                      >
+                        Send Info
+                      </button>
+                    </div>
+                  )}
+              </div>
+            )}
 
             {/* ── Action banners (compact, high-contrast) ── */}
 
@@ -1563,6 +1717,75 @@ export default function InboxPage() {
               </button>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* ===== Feature 11: Submit Dispute Modal ===== */}
+      {showDisputeModal && selectedOrder && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <form onSubmit={handleSubmitDispute} className="w-full max-w-md rounded-2xl border border-rose-500/30 bg-[#0c1017] shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white">Submit Order Dispute</h3>
+                <p className="text-[11px] text-slate-400">Trade #{selectedOrder.id} — {selectedOrder.channelName}</p>
+              </div>
+              <button type="button" onClick={() => setShowDisputeModal(false)} className="text-slate-400 hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-slate-300">Category</label>
+              <select
+                value={disputeCategory}
+                onChange={(e) => setDisputeCategory(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#111722] px-3 py-2 text-xs text-white focus:outline-none focus:border-rose-400"
+              >
+                <option value="non_delivery">Non-delivery / Missing files or credentials</option>
+                <option value="file_corrupted_or_mismatch">Corrupted file or product mismatch</option>
+                <option value="unauthorized_access">Unauthorized access / security concern</option>
+                <option value="payment_issue">Payment / escrow discrepancy</option>
+                <option value="communication_issue">Unresponsive counterparty</option>
+                <option value="other">Other issue</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-slate-300">Description</label>
+              <textarea
+                rows={4}
+                value={disputeDescription}
+                onChange={(e) => setDisputeDescription(e.target.value)}
+                placeholder="Describe the issue clearly for admin review (min 10 characters)..."
+                maxLength={2000}
+                className="w-full rounded-xl border border-white/10 bg-[#111722] px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-semibold text-slate-300">Optional Evidence (up to 3 files: PNG, JPG, PDF, TXT, ZIP)</label>
+              <input
+                type="file"
+                multiple
+                onChange={(e) => setDisputeFiles(Array.from(e.target.files || []).slice(0, 3))}
+                className="w-full text-[11px] text-slate-400"
+              />
+            </div>
+            {disputeError && <p className="text-xs text-rose-400">{disputeError}</p>}
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowDisputeModal(false)}
+                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submittingDispute}
+                className="flex-1 rounded-xl bg-rose-500 px-4 py-2 text-xs font-bold text-white hover:bg-rose-400 disabled:opacity-60 transition"
+              >
+                {submittingDispute ? "Submitting..." : "Submit Dispute"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

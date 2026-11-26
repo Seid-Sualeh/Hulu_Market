@@ -26,7 +26,8 @@ import {
 
 interface NotificationItem {
   id: string;
-  type: "escrow" | "wallet" | "marketplace" | "system";
+  dbId?: number;
+  type: "escrow" | "wallet" | "marketplace" | "dispute" | "system";
   title: string;
   message: string;
   timestamp: string;
@@ -37,54 +38,80 @@ interface NotificationItem {
 
 export default function NotificationsPage() {
   const { user } = useAuth();
-  const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "escrow" | "wallet">("all");
+  const [activeFilter, setActiveFilter] = useState<"all" | "unread" | "escrow" | "dispute" | "wallet">("all");
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [serverUnreadCount, setServerUnreadCount] = useState<number | null>(null);
+
+  const mapNotif = (n: any): NotificationItem => ({
+    id: `notif-${n.id}`,
+    dbId: n.id,
+    type: n.type || "system",
+    title: n.title,
+    message: n.message,
+    timestamp: new Date(n.created_at).toLocaleString(),
+    read: !!n.is_read,
+    actionUrl: n.action_url || "/inbox",
+    actionLabel: n.action_label || "View Details",
+  });
+
+  const loadNotifications = async (offset = 0, append = false) => {
+    if (!user?.id) return;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+    setError(null);
+    try {
+      const r = await fetchBackend(`user/notifications?limit=20&offset=${offset}`);
+      const data = await r.json();
+      if (!r.ok || !data.success) {
+        throw new Error(data.error || "Failed to load notifications.");
+      }
+      const mapped = Array.isArray(data.notifications) ? data.notifications.map(mapNotif) : [];
+      setNotifications((prev) => (append ? [...prev, ...mapped] : mapped));
+      setHasMore(!!data.hasMore);
+      if (typeof data.unreadCount === "number") {
+        setServerUnreadCount(data.unreadCount);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Could not load notifications.");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
-    if (!user?.id) return;
-    fetchBackend(`user/notifications?userId=${user.id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.notifications)) {
-          const mapped: NotificationItem[] = data.notifications.map((n: any) => ({
-            id: `notif-${n.id}`,
-            dbId: n.id,
-            type: n.type || "system",
-            title: n.title,
-            message: n.message,
-            timestamp: new Date(n.created_at).toLocaleString(),
-            read: !!n.is_read,
-            actionUrl: n.action_url || "/inbox",
-            actionLabel: n.action_label || "View Details",
-          }));
-          setNotifications(mapped);
-        }
-      })
-      .catch(() => {});
+    loadNotifications(0, false);
   }, [user?.id]);
 
   const displayedList = notifications;
 
-  const unreadCount = displayedList.filter((n) => !n.read).length;
+  const unreadCount = serverUnreadCount !== null ? serverUnreadCount : displayedList.filter((n) => !n.read).length;
 
   const filteredList = displayedList.filter((item) => {
     if (activeFilter === "unread") return !item.read;
     if (activeFilter === "escrow") return item.type === "escrow";
+    if (activeFilter === "dispute") return item.type === "dispute";
     if (activeFilter === "wallet") return item.type === "wallet";
     return true;
   });
 
   const markAllAsRead = async () => {
     setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
-    for (const item of notifications) {
-      if (!item.read) {
-        const rawId = (item as any).dbId || item.id.replace(/^notif-/, "");
-        fetchBackend(`user/notifications/${rawId}/read`, { method: "PATCH" }).catch(() => {});
-      }
-    }
+    setServerUnreadCount(0);
+    try {
+      await fetchBackend("user/notifications/read-all", { method: "PATCH" });
+    } catch {}
   };
 
   const markAsRead = (id: string) => {
+    const target = notifications.find((n) => n.id === id);
+    if (target && !target.read) {
+      setServerUnreadCount((prev) => (prev !== null ? Math.max(0, prev - 1) : null));
+    }
     setNotifications((prev) =>
       prev.map((item) => (item.id === id ? { ...item, read: true } : item))
     );
@@ -195,6 +222,17 @@ export default function NotificationsPage() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveFilter("dispute")}
+              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeFilter === "dispute"
+                  ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Disputes
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveFilter("wallet")}
               className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
                 activeFilter === "wallet"
@@ -209,7 +247,22 @@ export default function NotificationsPage() {
 
         {/* Content Area */}
         <div className="min-h-[380px]">
-          {displayedList.length === 0 || filteredList.length === 0 ? (
+          {loading ? (
+            <div className="bg-[#111722]/60 border border-slate-800/80 rounded-2xl p-12 text-center max-w-md mx-auto my-8">
+              <p className="text-xs text-slate-400 animate-pulse">Loading notifications...</p>
+            </div>
+          ) : error ? (
+            <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-6 text-center max-w-md mx-auto my-8 space-y-3">
+              <p className="text-xs text-rose-300">{error}</p>
+              <button
+                type="button"
+                onClick={() => loadNotifications(0, false)}
+                className="px-4 py-1.5 rounded-lg bg-rose-500/20 text-rose-200 text-xs font-semibold hover:bg-rose-500/30 transition"
+              >
+                Retry
+              </button>
+            </div>
+          ) : displayedList.length === 0 || filteredList.length === 0 ? (
             /* Empty State matching design patterns */
             <div className="bg-[#111722]/60 border border-slate-800/80 rounded-2xl p-12 text-center max-w-md mx-auto space-y-4 my-8">
               <div className="w-16 h-16 rounded-2xl bg-[#18202d] border border-slate-700/60 flex items-center justify-center text-slate-500 mx-auto shadow-inner">
@@ -250,6 +303,8 @@ export default function NotificationsPage() {
                     className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
                       notif.type === "escrow"
                         ? "bg-teal-500/10 border-teal-500/25 text-teal-400"
+                        : notif.type === "dispute"
+                        ? "bg-rose-500/10 border-rose-500/25 text-rose-400"
                         : notif.type === "wallet"
                         ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400"
                         : notif.type === "marketplace"
@@ -318,6 +373,18 @@ export default function NotificationsPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+          {hasMore && !loading && (
+            <div className="flex justify-center pt-4">
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={() => loadNotifications(notifications.length, true)}
+                className="px-5 py-2 rounded-xl border border-slate-700 bg-[#111722] hover:bg-[#161d2b] text-xs font-semibold text-slate-300 disabled:opacity-50 transition"
+              >
+                {loadingMore ? "Loading..." : "Load More Notifications"}
+              </button>
             </div>
           )}
         </div>

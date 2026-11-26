@@ -2,19 +2,12 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeftRight,
   Bell,
-  BookOpen,
-  CarFront,
-  Clapperboard,
   CreditCard,
   Heart,
-  Home,
-  House,
   Inbox,
   LayoutDashboard,
   ListOrdered,
   LogOut,
-  Monitor,
-  PanelsTopLeft,
   Plus,
   ShieldCheck,
   ShoppingBag,
@@ -29,14 +22,7 @@ export type NavigationLink = {
   icon: LucideIcon;
 };
 
-export type NavigationGroup = {
-  type: "group";
-  label: string;
-  icon: LucideIcon;
-  items: NavigationLink[];
-};
-
-export type NavigationEntry = NavigationLink | NavigationGroup;
+export type NavigationEntry = NavigationLink;
 
 export const navigationSections: {
   label: string;
@@ -58,54 +44,10 @@ export const navigationSections: {
         icon: ShieldCheck,
       },
       {
-        type: "group",
+        type: "link",
         label: "Marketplace",
+        href: "/marketplace",
         icon: ShoppingBag,
-        items: [
-          {
-            type: "link",
-            label: "Social Media Channels",
-            href: "/social-media",
-            icon: PanelsTopLeft,
-          },
-          {
-            type: "link",
-            label: "Ebooks & Digital Products",
-            href: "/digital-products",
-            icon: BookOpen,
-          },
-          {
-            type: "link",
-            label: "Houses & Properties",
-            href: "/houses-properties",
-            icon: House,
-          },
-          {
-            type: "link",
-            label: "Vehicles",
-            href: "/vehicles",
-            icon: CarFront,
-          },
-          {
-            type: "link",
-            label: "Electronics",
-            href: "/electronics",
-            icon: Monitor,
-          },
-
-          {
-            type: "link",
-            label: "Educational Videos",
-            href: "/educational-videos",
-            icon: Clapperboard,
-          },
-          {
-            type: "link",
-            label: "Home & Furniture",
-            href: "/home-furniture",
-            icon: Home,
-          },
-        ],
       },
       {
         type: "link",

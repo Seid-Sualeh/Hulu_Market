@@ -100,7 +100,6 @@ export default function MobileSidebar() {
             </div>
             <div className="mx-5 border-t border-white/[0.07]" />
             <SidebarNavigation
-              idPrefix="mobile"
               onNavigate={() => setOpen(false)}
             />
           </aside>

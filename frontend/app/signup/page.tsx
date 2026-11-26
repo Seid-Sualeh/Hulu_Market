@@ -11,7 +11,7 @@ import AuthBackground from "@/components/auth/AuthBackground";
 function SignUpContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/social-media";
+  const redirect = searchParams.get("redirect") || "/marketplace";
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
