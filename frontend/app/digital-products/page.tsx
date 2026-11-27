@@ -327,29 +327,27 @@ export default function DigitalProductsPage() {
 
       {/* 4. Products Grid / Skeletons / Empty State */}
       {loading ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, idx) => (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, idx) => (
             <div
               key={idx}
-              className="animate-pulse rounded-2xl border border-white/[0.06] bg-[#121722] p-5 space-y-4"
+              className="flex overflow-hidden rounded-2xl border border-white/[0.06] bg-[#111722] animate-pulse"
             >
-              <div className="flex justify-between">
-                <div className="h-6 w-16 rounded-md bg-white/10" />
-                <div className="h-5 w-24 rounded-full bg-white/10" />
-              </div>
-              <div className="h-12 w-full rounded-xl bg-white/5" />
-              <div className="space-y-2">
-                <div className="h-4 w-3/4 rounded bg-white/10" />
-                <div className="h-3 w-full rounded bg-white/5" />
-                <div className="h-3 w-5/6 rounded bg-white/5" />
-              </div>
-              <div className="flex gap-2 pt-2 border-t border-white/5">
-                <div className="h-4 w-16 rounded bg-white/5" />
-                <div className="h-4 w-16 rounded bg-white/5" />
-              </div>
-              <div className="flex justify-between items-center pt-3 border-t border-white/5">
-                <div className="h-4 w-20 rounded bg-white/5" />
-                <div className="h-5 w-16 rounded bg-white/10" />
+              <div className="w-12 sm:w-16 bg-white/[0.04] shrink-0" />
+              <div className="flex-1 p-4 space-y-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-14 h-20 sm:w-16 sm:h-22 rounded-xl bg-white/[0.06] shrink-0" />
+                  <div className="flex-1 space-y-2 pt-1">
+                    <div className="h-4 w-3/4 rounded bg-white/[0.08]" />
+                    <div className="h-3 w-1/2 rounded bg-white/[0.05]" />
+                    <div className="h-3 w-1/3 rounded bg-white/[0.05]" />
+                  </div>
+                </div>
+                <div className="h-12 w-full rounded-xl bg-white/[0.04]" />
+                <div className="flex justify-between items-center pt-2 border-t border-white/[0.06]">
+                  <div className="h-4 w-24 rounded bg-white/[0.05]" />
+                  <div className="h-6 w-20 rounded-xl bg-white/[0.08]" />
+                </div>
               </div>
             </div>
           ))}
@@ -399,7 +397,7 @@ export default function DigitalProductsPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => (
             <DigitalProductCard key={product.id} product={product} />
           ))}

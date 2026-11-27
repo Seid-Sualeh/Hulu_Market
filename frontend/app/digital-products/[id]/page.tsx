@@ -674,11 +674,11 @@ export default function DigitalProductDetailsPage({ params }: PageProps) {
         </div>
 
         {loadingRelated ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
               <div
                 key={i}
-                className="h-64 animate-pulse rounded-2xl border border-white/5 bg-[#121722]"
+                className="h-44 animate-pulse rounded-2xl border border-white/5 bg-[#121722]"
               />
             ))}
           </div>
@@ -687,7 +687,7 @@ export default function DigitalProductDetailsPage({ params }: PageProps) {
             No additional related products currently available in this subcategory.
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {relatedProducts.map((item) => (
               <DigitalProductCard key={item.id} product={item} />
             ))}

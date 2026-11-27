@@ -48,6 +48,14 @@ export default function MarketplacePage() {
       featured: true,
     },
     {
+      title: "Ebooks & Digital Products",
+      href: "/digital-products",
+      icon: BookOpen,
+      description: "Educational documents, study notes, academic ebooks, templates, and guides.",
+      count: "Active digital catalog",
+      featured: true,
+    },
+    {
       title: "Houses & Properties",
       href: "/houses-properties",
       icon: House,
@@ -67,14 +75,6 @@ export default function MarketplacePage() {
       icon: Monitor,
       description: "Laptops, smartphones, audio systems, and computer hardware accessories.",
       count: "Upcoming listings",
-    },
-    {
-      title: "Ebooks & Digital Products",
-      href: "/digital-products",
-      icon: BookOpen,
-      description: "Educational documents, study notes, academic ebooks, templates, and guides.",
-      count: "Active digital catalog",
-      featured: true,
     },
     {
       title: "Educational Videos",

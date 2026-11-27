@@ -16,6 +16,7 @@ import {
   FileText,
   Home,
   House,
+  Image as ImageIcon,
   Info,
   Link as LinkIcon,
   Loader2,
@@ -131,6 +132,16 @@ function SellPageInner() {
   const [itemCondition, setItemCondition] = useState("Brand New");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const digitalCoverInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDigitalCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setScreenshotFile(file);
+      const url = URL.createObjectURL(file);
+      setPreviewImage(url);
+    }
+  };
 
   // 1. GUEST AUTH GUARD: If not signed in, redirect to /auth?redirect=/sell
   useEffect(() => {
@@ -544,6 +555,25 @@ function SellPageInner() {
 
     setIsSubmittingDigital(true);
     try {
+      // 1. Upload cover image if a new file was selected
+      let uploadedScreenshotUrl = existingScreenshotUrl;
+      if (screenshotFile) {
+        const formData = new FormData();
+        formData.append("file", screenshotFile);
+        const uploadRes = await fetchBackend("upload?visibility=public", {
+          method: "POST",
+          body: formData,
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.success && uploadData.url) {
+          uploadedScreenshotUrl = uploadData.url;
+        } else {
+          setSubmitError(uploadData?.error || "Failed to upload cover image. Please try again.");
+          setIsSubmittingDigital(false);
+          return;
+        }
+      }
+
       const payload = {
         listing_type: "ebooks-digital",
         category: "Ebooks & Digital Products",
@@ -554,6 +584,7 @@ function SellPageInner() {
         price: Number(digitalPrice),
         page_count: digitalPageCount.trim() ? Number(digitalPageCount) : null,
         language: digitalLanguage.trim() || null,
+        screenshot_url: uploadedScreenshotUrl || null,
         agreed_declaration: true,
         seller_username: sellerUsername.trim() || undefined,
         seller_phone: phoneNumber.trim() || undefined,
@@ -1193,7 +1224,71 @@ function SellPageInner() {
               </span>
             </div>
 
-            {/* 1. Product Title */}
+            {/* 1. Cover Image Upload Card */}
+            <div className="rounded-2xl border border-white/[0.06] bg-[#0c1017] p-5">
+              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                {/* Left Description */}
+                <div className="space-y-3 flex-1">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-300">
+                    <ImageIcon size={14} />
+                    <span>Product Cover / Thumbnail</span>
+                  </div>
+
+                  <h3 className="text-sm font-bold text-white">Cover Image Upload</h3>
+
+                  <p className="text-xs leading-relaxed text-slate-300">
+                    Upload an attractive cover image or preview thumbnail for your digital product (e.g. eBook front cover, presentation slide, or document mockup).
+                    Recommended formats: PNG, JPG, or WEBP (Max 10MB).
+                  </p>
+
+                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                    <span className="size-1.5 rounded-full bg-amber-400" />
+                    <span>Displays on marketplace listing cards and product details</span>
+                  </div>
+                </div>
+
+                {/* Right Cover Upload Target */}
+                <div className="flex justify-center shrink-0">
+                  <div
+                    onClick={() => digitalCoverInputRef.current?.click()}
+                    className="relative cursor-pointer group flex h-52 w-36 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-amber-500/40 bg-[#070b10] p-2 shadow-2xl transition hover:border-amber-400"
+                  >
+                    <input
+                      ref={digitalCoverInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={handleDigitalCoverChange}
+                    />
+
+                    {previewImage ? (
+                      <div className="relative size-full overflow-hidden rounded-xl">
+                        <img
+                          src={previewImage}
+                          alt="Cover preview"
+                          className="size-full object-cover"
+                        />
+                        <div className="absolute inset-0 grid place-items-center bg-black/60 opacity-0 group-hover:opacity-100 transition text-[11px] text-white font-bold">
+                          Change Cover
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 text-center text-amber-400 group-hover:scale-105 transition">
+                        <div className="grid size-10 place-items-center rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                          <Upload size={20} />
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-300">
+                          Upload Cover
+                        </span>
+                        <span className="text-[9px] text-slate-500">PNG, JPG or WEBP</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Product Title */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-300">
