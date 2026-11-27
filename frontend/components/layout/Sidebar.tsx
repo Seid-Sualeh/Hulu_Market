@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  ChevronRight,
   Coins,
   LogIn,
   LogOut,
@@ -56,7 +57,7 @@ function NavigationLinkItem({
         isChild ? "py-1.5" : "py-2"
       } ${
         active
-          ? "bg-teal-500/15 text-teal-300 ring-1 ring-inset ring-teal-500/30 font-semibold shadow-sm shadow-teal-950/40"
+          ? "bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/30 font-semibold shadow-sm shadow-amber-950/40"
           : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200"
       }`}
     >
@@ -66,7 +67,7 @@ function NavigationLinkItem({
         strokeWidth={active ? 2.2 : 1.8}
         className={
           active
-            ? "shrink-0 text-teal-400"
+            ? "shrink-0 text-amber-400"
             : "shrink-0 text-slate-500 transition-colors group-hover:text-slate-300"
         }
       />
@@ -76,10 +77,13 @@ function NavigationLinkItem({
           {badgeCount > 99 ? "99+" : badgeCount}
         </span>
       )}
-      {active && (!badgeCount || badgeCount === 0) && (
+      {active && item.href === "/admin" && (
+        <ChevronRight size={14} className="text-amber-400/80 shrink-0" />
+      )}
+      {active && item.href !== "/admin" && (!badgeCount || badgeCount === 0) && (
         <span
           aria-hidden="true"
-          className="h-1.5 w-1.5 shrink-0 rounded-full bg-teal-400 shadow-[0_0_8px_rgba(45,212,191,0.8)]"
+          className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)]"
         />
       )}
     </Link>

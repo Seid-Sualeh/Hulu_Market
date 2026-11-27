@@ -39,7 +39,7 @@ export const navigationSections: {
       },
       {
         type: "link",
-        label: "Admin Control",
+        label: "Admin Dashboard",
         href: "/admin",
         icon: ShieldCheck,
       },
