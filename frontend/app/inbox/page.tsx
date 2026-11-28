@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -160,6 +160,7 @@ export default function InboxPage() {
 
   // Init admin chat greeting
   useEffect(() => {
+    if (user?.role === "admin") return;
     const greeting = user?.name ? `Hello ${user.name}!` : "Hello!";
     setAdminMessages([
       {
@@ -168,11 +169,11 @@ export default function InboxPage() {
         time: "Just now",
       },
     ]);
-  }, [user?.name]);
+  }, [user?.name, user?.role]);
 
   // Fetch admin online status when admin chat modal is opened
   useEffect(() => {
-    if (!isAdminChatOpen) return;
+    if (!isAdminChatOpen || user?.role === "admin") return;
     const fetchAdminStatus = async () => {
       try {
         const res = await fetchBackend("user/admin-status");
@@ -183,7 +184,7 @@ export default function InboxPage() {
     fetchAdminStatus();
     const interval = setInterval(fetchAdminStatus, 30000);
     return () => clearInterval(interval);
-  }, [isAdminChatOpen]);
+  }, [isAdminChatOpen, user?.role]);
 
   // Load escrow orders
   const loadOrders = async () => {
@@ -676,7 +677,9 @@ export default function InboxPage() {
     }
   };
 
-  const handleSendAdminSupport = (e: React.FormEvent) => {    e.preventDefault();
+  const handleSendAdminSupport = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (user?.role === "admin") return;
     if (!adminChatInput.trim()) return;
     const userMsg = adminChatInput.trim();
     const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -813,6 +816,7 @@ export default function InboxPage() {
       </div>
 
       {/* Pinned Admin Chat */}
+      {user?.role !== "admin" && (
       <div
         onClick={() => setIsAdminChatOpen(true)}
         className="group flex cursor-pointer items-center justify-between rounded-2xl border border-white/[0.08] bg-[#111722] p-4 transition-all duration-150 hover:border-amber-400/40 hover:bg-[#151d2a] shadow-md"
@@ -836,6 +840,7 @@ export default function InboxPage() {
           <span>Pinned</span>
         </div>
       </div>
+      )}
 
       {/* Escrow Orders */}
       <div className="space-y-4">
@@ -1649,7 +1654,7 @@ export default function InboxPage() {
       )}
 
       {/* ===== Admin Support Modal ===== */}
-      {isAdminChatOpen && (
+      {isAdminChatOpen && user?.role !== "admin" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
           <div className="flex h-[85vh] max-h-[640px] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#0c1017] p-4 shrink-0">
