@@ -617,21 +617,115 @@ function SellPageInner() {
     }
   };
 
+  const listingSteps =
+    selectedMarketplace === "social-media"
+      ? ["Select Marketplace", "Select Platform", "Add Details", "Contact Info", "Set Price"]
+      : selectedMarketplace === "ebooks-digital"
+        ? ["Select Marketplace", "Product Details", "Contact & Price", "Declaration"]
+        : ["Select Marketplace", "Item Details", "Set Price", "Declaration"];
+
   if (!mounted) {
     return <div className="min-h-screen bg-[#0b0f17]" />;
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 pb-24">
+    <div className="mx-auto max-w-5xl space-y-5 pb-24 sm:space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-          Sell on Hulu Market
-        </h1>
-        <p className="mt-1 text-xs text-slate-400">
-          List your social media channel or property. Our escrow team verifies all statistics and supervises ownership transfer.
-        </p>
-      </div>
+      <header className="relative isolate overflow-hidden rounded-3xl border border-amber-400/25 bg-[linear-gradient(105deg,#0b1422_0%,#101827_48%,#171a20_72%,#5a3b0c_100%)] px-5 py-5 shadow-xl shadow-black/20 sm:min-h-40 sm:px-8 sm:py-6">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_82%_50%,rgba(245,158,11,0.34),transparent_42%)]"
+        />
+        <div aria-hidden="true" className="pointer-events-none absolute -right-12 -top-24 size-64 rounded-full border border-amber-300/10" />
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 640 180"
+          preserveAspectRatio="none"
+          className="pointer-events-none absolute inset-y-0 right-0 hidden h-full w-[58%] sm:block"
+        >
+          <path d="M170 180C330 130 390 120 640 6v174H170Z" fill="url(#sell-banner-gold)" opacity=".72" />
+          <path d="M260 180C420 120 490 96 640 34" fill="none" stroke="#fcd34d" strokeWidth="2" strokeOpacity=".6" />
+          <path d="M210 180C365 140 440 120 640 18" fill="none" stroke="#fbbf24" strokeWidth="1" strokeOpacity=".35" />
+          <defs>
+            <linearGradient id="sell-banner-gold" x1="230" y1="180" x2="620" y2="20" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#b77912" stopOpacity=".08" />
+              <stop offset="1" stopColor="#fbbf24" stopOpacity=".78" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <div className="relative flex min-h-28 items-center justify-between gap-3 sm:min-h-28 sm:gap-5">
+          <div className="max-w-2xl">
+            <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+              <span className="border-b-2 border-amber-400">Sell</span> on Hulu Market
+            </h1>
+            <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-slate-300 sm:text-sm">
+              Create listings across social media, digital products, property, vehicles, and more. Our team reviews submissions before publication.
+            </p>
+          </div>
+          <div aria-hidden="true" className="relative hidden h-32 w-64 shrink-0 items-center justify-center sm:flex">
+            <div className="absolute left-1 top-2 grid size-11 place-items-center rounded-full border border-white/30 bg-[#229ED9] text-white shadow-lg shadow-sky-950/40">
+              {socialPlatforms[0].icon}
+            </div>
+            <div className="absolute left-16 top-0 grid size-9 place-items-center rounded-xl border border-white/20 bg-[#ff2525] text-white shadow-lg shadow-red-950/40">
+              {socialPlatforms[1].icon}
+            </div>
+            <div className="absolute bottom-1 left-16 grid size-10 place-items-center rounded-xl border border-white/25 bg-gradient-to-tr from-fuchsia-700 via-pink-500 to-amber-400 text-white shadow-lg shadow-pink-950/40">
+              {socialPlatforms[2].icon}
+            </div>
+            <div className="absolute left-0 top-20 h-px w-12 rotate-[-18deg] bg-gradient-to-r from-transparent to-cyan-300/70" />
+            <svg
+              viewBox="0 0 160 140"
+              fill="none"
+              className="relative ml-20 h-32 w-36 drop-shadow-[0_5px_6px_rgba(0,0,0,0.65)]"
+            >
+              <defs>
+                <linearGradient id="sell-megaphone-body" x1="38" y1="32" x2="131" y2="104" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#FFF1A8" />
+                  <stop offset=".38" stopColor="#FBBF24" />
+                  <stop offset="1" stopColor="#D97706" />
+                </linearGradient>
+                <linearGradient id="sell-megaphone-handle" x1="62" y1="75" x2="92" y2="123" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#FDE68A" />
+                  <stop offset="1" stopColor="#B45309" />
+                </linearGradient>
+              </defs>
+              <g transform="translate(160 0) scale(-1 1)">
+                <path d="M137 28c8 5 12 13 12 23v37c0 10-4 18-12 23" stroke="#FCD34D" strokeWidth="4" strokeLinecap="round" />
+                <path d="M128 38c5 4 7 9 7 15v13" stroke="#FDE68A" strokeWidth="3" strokeLinecap="round" opacity=".8" />
+                <path d="M39 47 118 20c8-3 15 2 15 11v78c0 9-7 14-15 11L39 93V47Z" fill="url(#sell-megaphone-body)" stroke="#FEF3C7" strokeWidth="3" strokeLinejoin="round" />
+                <path d="M39 47v46c-12 0-20-9-20-23s8-23 20-23Z" fill="#B45309" stroke="#FDE68A" strokeWidth="3" strokeLinejoin="round" />
+                <path d="m51 49 61-20v9L51 59V49Z" fill="#FFF7CC" opacity=".72" />
+                <path d="m62 91 8 34c1 4 4 6 8 4l16-7c4-2 5-5 3-9L82 81" fill="url(#sell-megaphone-handle)" stroke="#FDE68A" strokeWidth="3" strokeLinejoin="round" />
+                <path d="m73 119 20-8" stroke="#92400E" strokeWidth="4" strokeLinecap="round" />
+              </g>
+            </svg>
+          </div>
+        </div>
+      </header>
+
+      <nav aria-label="Listing steps" className="rounded-2xl border border-white/[0.08] bg-[#0e1520]/90 px-3 py-4 sm:px-6">
+          <ol className={`grid ${listingSteps.length === 5 ? "grid-cols-5" : "grid-cols-4"} gap-1 sm:gap-3`}>
+            {listingSteps.map((step, index) => (
+              <li key={step} className="relative flex min-w-0 flex-col items-center text-center">
+                {index < listingSteps.length - 1 && (
+                  <span aria-hidden="true" className="absolute left-[calc(50%+1rem)] right-[calc(-50%+1rem)] top-4 h-px bg-slate-700 sm:left-[calc(50%+1.25rem)] sm:right-[calc(-50%+1.25rem)]" />
+                )}
+                <span className={`relative z-10 grid size-8 place-items-center rounded-full border text-xs font-extrabold sm:size-9 ${
+                  index === 0
+                    ? "border-amber-300 bg-amber-400 text-slate-950 shadow-md shadow-amber-500/25"
+                    : "border-slate-700 bg-[#182234] text-slate-400"
+                }`}>
+                  {index + 1}
+                </span>
+                <span className={`mt-2 max-w-full text-[9px] font-semibold leading-tight sm:text-[11px] ${
+                  index === 0 ? "text-amber-300" : "text-slate-400"
+                }`}>
+                  {step}
+                </span>
+              </li>
+            ))}
+          </ol>
+      </nav>
 
       {/* Rejection Notice Banner (if editing a rejected listing) */}
       {rejectionNotice && (
@@ -666,9 +760,9 @@ function SellPageInner() {
       )}
 
       {/* 1. SELECT MARKETPLACE CATEGORY */}
-      <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-5 sm:p-6 shadow-md">
+      <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-[#121b2a] to-[#10151e] p-4 shadow-md sm:p-6">
         <div className="mb-4">
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-teal-400">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-amber-300 sm:tracking-[0.2em]">
             STEP 01 &bull; SELECT MARKETPLACE
           </p>
           <p className="text-xs text-slate-400 mt-1">
@@ -683,16 +777,18 @@ function SellPageInner() {
               <button
                 key={item.id}
                 type="button"
+                aria-pressed={isSelected}
                 onClick={() => {
                   setSelectedMarketplace(item.id);
                   setSubmitted(false);
                 }}
-                className={`flex flex-col items-center justify-center gap-2 rounded-xl p-3 text-center transition-all duration-150 ${
+                className={`relative flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl p-2.5 text-center transition-all duration-150 sm:p-3 ${
                   isSelected
                     ? "bg-teal-500/15 text-teal-300 ring-2 ring-teal-400 shadow-md shadow-teal-950/40"
-                    : "bg-[#0c1017]/80 text-slate-400 hover:bg-[#151c27] hover:text-slate-200 border border-white/[0.04]"
+                    : "border border-white/[0.06] bg-[#0c1017]/80 text-slate-400 hover:border-white/15 hover:bg-[#151c27] hover:text-slate-200"
                 }`}
               >
+                {isSelected && <CheckCircle2 aria-hidden="true" className="absolute right-2 top-2 text-teal-300" size={15} />}
                 <div
                   className={`grid size-9 place-items-center rounded-lg transition ${
                     isSelected
@@ -767,30 +863,31 @@ function SellPageInner() {
 
       {/* SOCIAL MEDIA SELL FORM */}
       {!submitted && selectedMarketplace === "social-media" && (
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           {/* STEP 02: SELECT SOCIAL MEDIA PLATFORM */}
-          <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-5 shadow-md">
-            <div className="flex items-center justify-between mb-3">
+          <div className="rounded-2xl border border-amber-500/15 bg-gradient-to-br from-[#121b2a] to-[#10151e] p-4 shadow-md sm:p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
                 STEP 02 &bull; SELECT SOCIAL MEDIA PLATFORM
               </p>
-              <span className="text-xs font-semibold text-teal-400">
+              <span className="text-[11px] font-semibold text-teal-300 sm:text-xs">
                 Selected: {currentContactConfig.platformName}
               </span>
             </div>
 
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-5 sm:gap-3">
               {socialPlatforms.map((p) => {
                 const isSelected = selectedPlatform === p.id;
                 return (
                   <button
                     key={p.id}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => setSelectedPlatform(p.id)}
-                    className={`flex flex-col items-center justify-center gap-2 rounded-xl p-3 transition-all ${
+                    className={`flex min-h-20 flex-col items-center justify-center gap-2 rounded-xl p-2.5 text-center transition-all sm:p-3 ${
                       isSelected
                         ? "bg-teal-500/15 text-teal-300 ring-2 ring-teal-400 shadow-md shadow-teal-950/40"
-                        : "bg-[#0c1017]/80 text-slate-400 hover:bg-[#151c27] hover:text-slate-200 border border-white/[0.04]"
+                        : "border border-white/[0.06] bg-[#0c1017]/80 text-slate-400 hover:border-white/15 hover:bg-[#151c27] hover:text-slate-200"
                     }`}
                   >
                     <div
@@ -810,13 +907,13 @@ function SellPageInner() {
           </div>
 
           {/* STEP 03: CHANNEL INFORMATION & DASHBOARD SCREENSHOT */}
-          <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-6">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+          <div className="space-y-5 rounded-2xl border border-amber-500/15 bg-gradient-to-br from-[#121b2a] to-[#10151e] p-4 shadow-md sm:space-y-6 sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="grid size-9 place-items-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   <FileText size={18} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-white">
                     {currentContactConfig.platformName.toUpperCase()} CHANNEL INFORMATION
                   </h2>
@@ -825,14 +922,14 @@ function SellPageInner() {
                   </p>
                 </div>
               </div>
-              <span className="rounded-full bg-blue-500/15 border border-blue-500/30 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-blue-400">
+              <span className="self-start whitespace-nowrap rounded-full border border-blue-500/30 bg-blue-500/15 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-blue-300">
                 STEP 03
               </span>
             </div>
 
             {/* A. Channel Dashboard Screenshot Upload Card */}
-            <div className="rounded-2xl border border-white/[0.06] bg-[#0c1017] p-5">
-              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="rounded-2xl border border-teal-500/20 bg-[#0c1017]/80 p-4 sm:p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 {/* Left Description */}
                 <div className="space-y-3 flex-1">
                   <div className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-semibold text-teal-300">
@@ -853,15 +950,12 @@ function SellPageInner() {
                   </div>
                 </div>
 
-                {/* Right Smartphone mockup upload target */}
-                <div className="flex justify-center shrink-0">
+                {/* Screenshot upload target */}
+                <div className="flex w-full justify-center shrink-0 md:w-[42%]">
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="relative cursor-pointer group flex h-52 w-36 flex-col items-center justify-center rounded-[2rem] border-2 border-dashed border-teal-500/40 bg-[#070b10] p-2 shadow-2xl transition hover:border-teal-400"
+                    className="group relative flex h-40 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-teal-500/40 bg-[#070b10] p-3 text-center shadow-inner transition hover:border-teal-400"
                   >
-                    {/* Notch pill */}
-                    <div className="absolute top-2.5 h-3 w-10 rounded-full bg-black/80 ring-1 ring-white/10" />
-
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -871,7 +965,7 @@ function SellPageInner() {
                     />
 
                     {previewImage ? (
-                      <div className="relative size-full overflow-hidden rounded-[1.5rem]">
+                      <div className="relative size-full overflow-hidden rounded-xl">
                         <img
                           src={previewImage}
                           alt="Screenshot preview"
@@ -1006,13 +1100,13 @@ function SellPageInner() {
           </div>
 
           {/* STEP 04: DISPLAYED NAME & SELLER CONTACT */}
-          <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-6">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+          <div className="space-y-5 rounded-2xl border border-purple-500/15 bg-gradient-to-br from-[#121b2a] to-[#10151e] p-4 shadow-md sm:space-y-6 sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="grid size-9 place-items-center rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
                   <User size={18} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-white">
                     CHANNEL DISPLAY NAME &amp; SELLER CONTACT
                   </h2>
@@ -1021,7 +1115,7 @@ function SellPageInner() {
                   </p>
                 </div>
               </div>
-              <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-purple-400">
+              <span className="self-start whitespace-nowrap rounded-full border border-purple-500/30 bg-purple-500/15 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-purple-300">
                 STEP 04
               </span>
             </div>
@@ -1092,13 +1186,13 @@ function SellPageInner() {
           </div>
 
           {/* STEP 05: SELLING PRICE */}
-          <div className="rounded-2xl border border-teal-500/20 bg-[#111722] p-6 shadow-md space-y-4">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+          <div className="space-y-4 rounded-2xl border border-teal-500/25 bg-gradient-to-br from-[#102128] to-[#10151e] p-4 shadow-md sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="grid size-9 place-items-center rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
                   <TrendingUp size={18} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-white">
                     SELLING PRICE
                   </h2>
@@ -1107,7 +1201,7 @@ function SellPageInner() {
                   </p>
                 </div>
               </div>
-              <span className="rounded-full bg-teal-500/15 border border-teal-500/30 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-teal-400">
+              <span className="self-start whitespace-nowrap rounded-full border border-teal-500/30 bg-teal-500/15 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-teal-300">
                 STEP 05
               </span>
             </div>
@@ -1133,13 +1227,13 @@ function SellPageInner() {
           </div>
 
           {/* STEP 06: SELLER PERMISSION & MANDATORY DECLARATION */}
-          <div className="rounded-2xl border border-amber-500/40 bg-[#111722] p-6 shadow-md space-y-4">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+          <div className="space-y-4 rounded-2xl border border-amber-500/35 bg-gradient-to-br from-[#201b14] to-[#111722] p-4 shadow-md sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="grid size-9 place-items-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
                   <ShieldCheck size={18} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-white">
                     SELLER PERMISSION &amp; DECLARATION
                   </h2>
@@ -1203,14 +1297,14 @@ function SellPageInner() {
 
       {/* DIGITAL PRODUCTS SELL FORM */}
       {!submitted && selectedMarketplace === "ebooks-digital" && (
-        <form onSubmit={handleDigitalSubmit} className="space-y-6">
-          <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-6">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+        <form onSubmit={handleDigitalSubmit} className="space-y-4 sm:space-y-6">
+          <div className="space-y-5 rounded-2xl border border-amber-500/20 bg-gradient-to-br from-[#121b2a] to-[#10151e] p-4 shadow-md sm:space-y-6 sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="grid size-9 place-items-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
                   <BookOpen size={18} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-bold uppercase tracking-wide text-white">
                     Ebooks & Digital Products Listing Information
                   </h2>
@@ -1219,13 +1313,13 @@ function SellPageInner() {
                   </p>
                 </div>
               </div>
-              <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-amber-400">
+              <span className="self-start whitespace-nowrap rounded-full border border-amber-500/30 bg-amber-500/15 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-amber-300">
                 STEP 02
               </span>
             </div>
 
             {/* 1. Cover Image Upload Card */}
-            <div className="rounded-2xl border border-white/[0.06] bg-[#0c1017] p-5">
+            <div className="rounded-2xl border border-amber-500/15 bg-[#0c1017]/80 p-4 sm:p-5">
               <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
                 {/* Left Description */}
                 <div className="space-y-3 flex-1">
@@ -1248,10 +1342,10 @@ function SellPageInner() {
                 </div>
 
                 {/* Right Cover Upload Target */}
-                <div className="flex justify-center shrink-0">
+                <div className="flex w-full justify-center shrink-0 md:w-[42%]">
                   <div
                     onClick={() => digitalCoverInputRef.current?.click()}
-                    className="relative cursor-pointer group flex h-52 w-36 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-amber-500/40 bg-[#070b10] p-2 shadow-2xl transition hover:border-amber-400"
+                    className="group relative flex h-40 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-amber-500/40 bg-[#070b10] p-3 text-center shadow-inner transition hover:border-amber-400"
                   >
                     <input
                       ref={digitalCoverInputRef}
@@ -1614,9 +1708,9 @@ function SellPageInner() {
       {!submitted &&
         selectedMarketplace !== "social-media" &&
         selectedMarketplace !== "ebooks-digital" && (
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="rounded-2xl border border-white/[0.08] bg-[#111722] p-6 shadow-md space-y-6">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+          <div className="space-y-5 rounded-2xl border border-amber-500/20 bg-gradient-to-br from-[#121b2a] to-[#10151e] p-4 shadow-md sm:space-y-6 sm:p-6">
+            <div className="flex flex-col gap-3 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-sm font-bold uppercase tracking-wide text-white">
                   {marketplaceItems.find((m) => m.id === selectedMarketplace)?.label} Details
