@@ -368,6 +368,21 @@ export async function initDatabase(): Promise<boolean> {
     await safeAddColumn(conn, "escrow_messages", "message_type", "ENUM('text','voice','image') NOT NULL DEFAULT 'text'");
     await safeAddColumn(conn, "escrow_messages", "attachment_url", "VARCHAR(500) NULL");
 
+    // 6. Persistent support conversations between users and administrators
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS support_messages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        sender_id INT NOT NULL,
+        sender_role ENUM('user', 'admin') NOT NULL,
+        message TEXT NOT NULL,
+        is_read BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_support_user_message (user_id, id),
+        INDEX idx_support_unread (user_id, sender_role, is_read)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     // 6. User Notifications table
     await conn.query(`
       CREATE TABLE IF NOT EXISTS notifications (

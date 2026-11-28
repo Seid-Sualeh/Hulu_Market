@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowRight,
+  Bell,
   Bot,
   CheckCircle2,
   Download,
@@ -12,14 +13,14 @@ import {
   Eye,
   FileText,
   Image as ImageIcon,
-  Inbox as InboxIcon,
   Lock,
+  Mail,
   MessageSquare,
   Mic,
   PackageCheck,
-  Pin,
   Search,
   Send,
+  Scale,
   Shield,
   ShieldCheck,
   ShoppingBag,
@@ -34,8 +35,10 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { fetchBackend, resolveImageUrl } from "@/lib/api";
+import SupportChatPanel from "@/components/inbox/SupportChatPanel";
 
 type OrderTab = "processing" | "success" | "cancelled";
+type InboxSection = "messages" | "escrow" | "disputes" | "notifications";
 
 interface P2POrder {
   id: number;
@@ -87,21 +90,40 @@ interface EscrowMessage {
   created_at: string;
 }
 
+interface DisputeSummary {
+  id: number;
+  order_id: number;
+  category: string;
+  description: string;
+  status: string;
+  channel_name: string;
+  amount: number | string;
+  created_at: string;
+}
+
+interface InboxNotification {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  action_url: string | null;
+  action_label: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 
 export default function InboxPage() {
   const { user } = useAuth();
+  const [inboxSection, setInboxSection] = useState<InboxSection>("messages");
   const [activeTab, setActiveTab] = useState<OrderTab>("processing");
   const [searchQuery, setSearchQuery] = useState("");
   const [orders, setOrders] = useState<P2POrder[]>([]);
-
-  // Admin support chat
-  const [isAdminChatOpen, setIsAdminChatOpen] = useState(false);
-  const [adminMessages, setAdminMessages] = useState<
-    { sender: "admin" | "user"; text: string; time: string }[]
-  >([]);
-  const [adminChatInput, setAdminChatInput] = useState("");
-  const [adminOnlineStatus, setAdminOnlineStatus] = useState<{ isOnline: boolean; label: string } | null>(null);
+  const [inboxDisputes, setInboxDisputes] = useState<DisputeSummary[]>([]);
+  const [inboxNotifications, setInboxNotifications] = useState<InboxNotification[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [sectionLoading, setSectionLoading] = useState(false);
+  const [sectionError, setSectionError] = useState<string | null>(null);
 
   // Escrow order chat
   const [selectedOrder, setSelectedOrder] = useState<P2POrder | null>(null);
@@ -110,7 +132,7 @@ export default function InboxPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [confirmingCompletion, setConfirmingCompletion] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const orderMessagesContainerRef = useRef<HTMLDivElement>(null);
 
   // Voice recording
   const [isRecording, setIsRecording] = useState(false);
@@ -157,34 +179,6 @@ export default function InboxPage() {
     seller: { isOnline: boolean; label: string } | null;
     admin: { isOnline: boolean; label: string } | null;
   } | null>(null);
-
-  // Init admin chat greeting
-  useEffect(() => {
-    if (user?.role === "admin") return;
-    const greeting = user?.name ? `Hello ${user.name}!` : "Hello!";
-    setAdminMessages([
-      {
-        sender: "admin",
-        text: `${greeting} Welcome to Hulu Market Escrow Support. How can we assist you today?`,
-        time: "Just now",
-      },
-    ]);
-  }, [user?.name, user?.role]);
-
-  // Fetch admin online status when admin chat modal is opened
-  useEffect(() => {
-    if (!isAdminChatOpen || user?.role === "admin") return;
-    const fetchAdminStatus = async () => {
-      try {
-        const res = await fetchBackend("user/admin-status");
-        const data = await res.json();
-        if (data.success) setAdminOnlineStatus(data.admin);
-      } catch {}
-    };
-    fetchAdminStatus();
-    const interval = setInterval(fetchAdminStatus, 30000);
-    return () => clearInterval(interval);
-  }, [isAdminChatOpen, user?.role]);
 
   // Load escrow orders
   const loadOrders = async () => {
@@ -239,9 +233,72 @@ export default function InboxPage() {
     loadOrders();
   }, [user?.id]);
 
-  // Auto-scroll messages to bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!user?.id || !["disputes", "notifications"].includes(inboxSection)) return;
+    let active = true;
+    const loadSectionData = async () => {
+      setSectionLoading(true);
+      setSectionError(null);
+      try {
+        if (inboxSection === "disputes") {
+          const endpoint = user.role === "admin" ? "disputes/admin" : "disputes/my";
+          const response = await fetchBackend(endpoint);
+          const data = await response.json() as { success?: boolean; disputes?: DisputeSummary[]; error?: string };
+          if (!response.ok || !data.success || !Array.isArray(data.disputes)) {
+            throw new Error(data.error || "Could not load disputes.");
+          }
+          if (active) setInboxDisputes(data.disputes);
+        } else {
+          const response = await fetchBackend("user/notifications?limit=100");
+          const data = await response.json() as {
+            success?: boolean;
+            notifications?: InboxNotification[];
+            unreadCount?: number;
+            error?: string;
+          };
+          if (!response.ok || !data.success || !Array.isArray(data.notifications)) {
+            throw new Error(data.error || "Could not load notifications.");
+          }
+          if (active) {
+            setInboxNotifications(data.notifications);
+            setNotificationUnreadCount(Number(data.unreadCount) || 0);
+          }
+        }
+      } catch (error) {
+        if (active) setSectionError(error instanceof Error ? error.message : "Could not load inbox details.");
+      } finally {
+        if (active) setSectionLoading(false);
+      }
+    };
+
+    void loadSectionData();
+    return () => {
+      active = false;
+    };
+  }, [inboxSection, user?.id, user?.role]);
+
+  const markInboxNotificationRead = async (notificationId: number) => {
+    const notification = inboxNotifications.find((item) => item.id === notificationId);
+    if (!notification || notification.is_read) return;
+    try {
+      const response = await fetchBackend(`user/notifications/${notificationId}/read`, { method: "PATCH" });
+      const data = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Could not mark notification as read.");
+      }
+      setInboxNotifications((items) => items.map((item) =>
+        item.id === notificationId ? { ...item, is_read: true } : item
+      ));
+      setNotificationUnreadCount((count) => Math.max(0, count - 1));
+    } catch (error) {
+      setSectionError(error instanceof Error ? error.message : "Could not mark notification as read.");
+    }
+  };
+
+  // Keep auto-scroll inside the trade message pane rather than moving the page.
+  useEffect(() => {
+    const container = orderMessagesContainerRef.current;
+    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [orderMessages]);
 
   const formatBytes = (bytes: number) => {
@@ -677,24 +734,6 @@ export default function InboxPage() {
     }
   };
 
-  const handleSendAdminSupport = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (user?.role === "admin") return;
-    if (!adminChatInput.trim()) return;
-    const userMsg = adminChatInput.trim();
-    const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setAdminMessages((prev) => [
-      ...prev,
-      { sender: "user", text: userMsg, time: now },
-      {
-        sender: "admin",
-        text: "Thank you for reaching out to Hulu Market Support! For active trade disputes and secure communication, please use the Escrow Order chat below where our admin team directly supervises all transactions. We're here to help!",
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      },
-    ]);
-    setAdminChatInput("");
-  };
-
   const filteredOrders = orders.filter((o) => {
     const matchesTab =
       activeTab === "processing"
@@ -727,7 +766,13 @@ export default function InboxPage() {
         const res = await fetchBackend(`escrow/orders/${selectedOrder.id}/messages`);
         const data = await res.json();
         if (data.success && Array.isArray(data.messages)) {
-          setOrderMessages(data.messages);
+          const nextMessages = data.messages as EscrowMessage[];
+          setOrderMessages((current) =>
+            current.length === nextMessages.length &&
+            current.every((message, index) => message.id === nextMessages[index]?.id)
+              ? current
+              : nextMessages
+          );
         }
         // Also refresh deliveries if digital
         if (selectedOrder.listingType === "ebooks-digital") {
@@ -783,67 +828,179 @@ export default function InboxPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-20">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="grid size-10 place-items-center rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-400">
-          <InboxIcon size={20} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">Inbox</h1>
-          <p className="text-xs text-slate-400">
-            Escrow trades &bull; talk with sellers, buyers &amp; admin supervision
-          </p>
-        </div>
-      </div>
-
-      {/* Search */}
-      <div className="relative flex items-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#111722] shadow-inner focus-within:border-cyan-500/50">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search orders, channels, platforms..."
-          className="w-full bg-transparent px-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none"
-        />
-        {searchQuery ? (
-          <button type="button" onClick={() => setSearchQuery("")} className="mr-3 text-slate-400 hover:text-white">
-            <X size={16} />
-          </button>
-        ) : (
-          <span className="mr-4 text-slate-500"><Search size={16} /></span>
-        )}
-      </div>
-
-      {/* Pinned Admin Chat */}
-      {user?.role !== "admin" && (
-      <div
-        onClick={() => setIsAdminChatOpen(true)}
-        className="group flex cursor-pointer items-center justify-between rounded-2xl border border-white/[0.08] bg-[#111722] p-4 transition-all duration-150 hover:border-amber-400/40 hover:bg-[#151d2a] shadow-md"
-      >
-        <div className="flex items-center gap-3.5">
-          <div className="grid size-11 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-amber-400 to-teal-400 p-0.5 shadow-md overflow-hidden">
-            <div className="grid size-full place-items-center rounded-full overflow-hidden bg-[#0c1017]">
-              <img src="/logo.png" alt="Hulu Market" className="w-full h-full object-cover" />
-            </div>
+    <div className="mx-auto max-w-7xl space-y-5 pb-20">
+      <header className="relative overflow-hidden rounded-2xl border border-amber-400/20 bg-[radial-gradient(ellipse_at_80%_10%,rgba(245,158,11,0.22),transparent_38%),linear-gradient(110deg,#111722,#0b1422_55%,#332509)] px-6 py-7 sm:px-9 sm:py-8">
+        <div className="pointer-events-none absolute -right-8 -top-20 size-64 rounded-full border border-amber-300/10" />
+        <div className="pointer-events-none absolute -right-2 -top-14 size-52 rounded-full border border-amber-300/10" />
+        <div className="relative flex items-center gap-5">
+          <div className="relative grid size-16 shrink-0 place-items-center text-amber-300 sm:size-20">
+            <div className="absolute inset-2 rotate-[-18deg] rounded-full border border-amber-300/30" />
+            <div className="absolute inset-0 rounded-full bg-amber-400/10 blur-md" />
+            <Mail className="relative drop-shadow-[0_0_12px_rgba(251,191,36,0.55)]" size={42} strokeWidth={1.6} />
           </div>
           <div>
-            <div className="flex items-center gap-1.5">
-              <h3 className="text-sm font-bold text-white group-hover:text-amber-300 transition">Chat with Admin</h3>
-              <Sparkles size={14} className="text-amber-400" />
-            </div>
-            <p className="mt-0.5 text-xs text-slate-400">Escrow support, disputes &amp; verification</p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+              Inb<span className="text-amber-400">ox</span>
+            </h1>
+            <p className="mt-1 text-xs text-slate-300 sm:text-sm">Manage your messages and escrow transactions</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1 text-xs font-bold text-slate-950 shadow-sm shadow-amber-400/20">
-          <Pin size={12} className="fill-slate-950" />
-          <span>Pinned</span>
-        </div>
-      </div>
+      </header>
+
+      <nav aria-label="Inbox sections" className="flex gap-2 overflow-x-auto rounded-2xl border border-white/[0.06] bg-[#0c1017]/80 p-2">
+        {([
+          { id: "messages", label: "All Messages", icon: MessageSquare },
+          { id: "escrow", label: "Escrow Orders", icon: Scale },
+          { id: "disputes", label: "Disputes", icon: ShieldCheck },
+          { id: "notifications", label: "Notifications", icon: Bell },
+        ] as const).map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setInboxSection(id)}
+            aria-current={inboxSection === id ? "page" : undefined}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition ${
+              inboxSection === id
+                ? "bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20"
+                : "text-slate-300 hover:bg-white/[0.06] hover:text-white"
+            }`}
+          >
+            <Icon size={16} />
+            {label}
+            {id === "escrow" && orders.length > 0 && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${inboxSection === id ? "bg-black/10" : "bg-white/[0.08]"}`}>
+                {orders.length}
+              </span>
+            )}
+            {id === "disputes" && inboxDisputes.length > 0 && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${inboxSection === id ? "bg-black/10" : "bg-white/[0.08]"}`}>
+                {inboxDisputes.length}
+              </span>
+            )}
+            {id === "notifications" && notificationUnreadCount > 0 && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${inboxSection === id ? "bg-black/10" : "bg-white/[0.08]"}`}>
+                {notificationUnreadCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {inboxSection === "messages" && <SupportChatPanel isAdmin={user?.role === "admin"} />}
+
+      {inboxSection === "disputes" && (
+        <section className="space-y-3 rounded-2xl border border-white/[0.08] bg-[#0c1017]/75 p-4 sm:p-6">
+          <div>
+            <h2 className="text-sm font-bold text-white">Disputes</h2>
+            <p className="mt-1 text-xs text-slate-400">Review your escrow dispute history and open its trade chat.</p>
+          </div>
+          {sectionError && <p role="alert" className="rounded-lg bg-rose-500/10 p-3 text-xs text-rose-300">{sectionError}</p>}
+          {sectionLoading ? (
+            <p className="py-8 text-center text-xs text-slate-400">Loading disputes...</p>
+          ) : inboxDisputes.length > 0 ? (
+            <div className="space-y-2">
+              {inboxDisputes.map((dispute) => (
+                <article key={dispute.id} className="flex flex-col gap-3 rounded-xl border border-white/[0.08] bg-[#111722] p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white">
+                      Order #{dispute.order_id} <span className="font-normal text-slate-400">· {dispute.channel_name}</span>
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-xs text-slate-400">{dispute.description}</p>
+                    <p className="mt-2 text-[10px] text-slate-500">
+                      {dispute.category.replaceAll("_", " ")} · {dispute.status.replaceAll("_", " ")} · {new Date(dispute.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!orders.some((order) => order.id === Number(dispute.order_id))}
+                    onClick={() => {
+                      const order = orders.find((item) => item.id === Number(dispute.order_id));
+                      if (order) void openOrderChat(order);
+                    }}
+                    className="shrink-0 rounded-lg border border-amber-400/30 px-3 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Open trade chat
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-xs text-slate-400">No disputes found.</p>
+          )}
+        </section>
       )}
 
-      {/* Escrow Orders */}
+      {inboxSection === "notifications" && (
+        <section className="space-y-3 rounded-2xl border border-white/[0.08] bg-[#0c1017]/75 p-4 sm:p-6">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-white">Notifications</h2>
+              <p className="mt-1 text-xs text-slate-400">Updates about your account and marketplace activity.</p>
+            </div>
+            <Link href="/notifications" className="text-xs font-semibold text-amber-300 hover:text-amber-200">View all notifications</Link>
+          </div>
+          {sectionError && <p role="alert" className="rounded-lg bg-rose-500/10 p-3 text-xs text-rose-300">{sectionError}</p>}
+          {sectionLoading ? (
+            <p className="py-8 text-center text-xs text-slate-400">Loading notifications...</p>
+          ) : inboxNotifications.length > 0 ? (
+            <div className="space-y-2">
+              {inboxNotifications.map((notification) => (
+                <article key={notification.id} className={`flex items-start gap-3 rounded-xl border p-4 ${
+                  notification.is_read ? "border-white/[0.06] bg-[#111722]" : "border-amber-400/25 bg-amber-400/[0.06]"
+                }`}>
+                  <Bell size={16} className={`mt-0.5 shrink-0 ${notification.is_read ? "text-slate-500" : "text-amber-300"}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-white">{notification.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">{notification.message}</p>
+                    <p className="mt-2 text-[10px] text-slate-500">{new Date(notification.created_at).toLocaleString()}</p>
+                    <div className="mt-3 flex gap-4">
+                      <Link
+                        href={notification.action_url || "/inbox"}
+                        onClick={() => void markInboxNotificationRead(notification.id)}
+                        className="text-[11px] font-semibold text-amber-300 hover:text-amber-200"
+                      >
+                        {notification.action_label || "View details"}
+                      </Link>
+                      {!notification.is_read && (
+                        <button
+                          type="button"
+                          onClick={() => void markInboxNotificationRead(notification.id)}
+                          className="text-[11px] text-slate-400 hover:text-white"
+                        >
+                          Mark read
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-xs text-slate-400">You’re all caught up. No notifications to show.</p>
+          )}
+        </section>
+      )}
+
+      {inboxSection === "escrow" && (
       <div className="space-y-4">
+        <div className="relative flex items-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#111722] shadow-inner focus-within:border-cyan-500/50">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search orders, channels, platforms..."
+            className="w-full bg-transparent px-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none"
+          />
+          {searchQuery ? (
+            <button type="button" onClick={() => setSearchQuery("")} className="mr-3 text-slate-400 hover:text-white">
+              <X size={16} />
+            </button>
+          ) : (
+            <span className="mr-4 text-slate-500"><Search size={16} /></span>
+          )}
+        </div>
+
+        <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-white">Escrow Orders</h2>
           <span className="text-xs text-slate-400">Click any trade to open mediation chat</span>
@@ -953,11 +1110,13 @@ export default function InboxPage() {
           )}
         </div>
       </div>
+      </div>
+      )}
 
       {/* ===== Escrow 3-Way Chat Modal ===== */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 sm:p-4 md:p-6 backdrop-blur-md">
-          <div className="flex h-[88vh] max-h-[760px] min-h-[480px] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c1017] shadow-2xl shadow-black/80 my-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-2 sm:p-4 md:p-6 backdrop-blur-md">
+          <div className="my-auto flex h-[calc(100dvh-3rem)] max-h-[760px] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0c1017] shadow-2xl shadow-black/80 sm:h-[88vh] sm:min-h-[480px]">
 
             {/* ── Compact Unified Header ── */}
             <div className="shrink-0 bg-[#111722] border-b border-white/[0.08]">
@@ -1412,7 +1571,7 @@ export default function InboxPage() {
             )}
 
             {/* Messages area */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
+            <div ref={orderMessagesContainerRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
               {loadingMessages ? (
                 <div className="flex h-full items-center justify-center">
                   <p className="text-xs text-slate-500 animate-pulse">Loading trade messages...</p>
@@ -1553,7 +1712,6 @@ export default function InboxPage() {
                   );
                 })
               )}
-              <div ref={messagesEndRef} />
             </div>
 
             {/* ── Bottom input bar ── */}
@@ -1653,82 +1811,10 @@ export default function InboxPage() {
         </div>
       )}
 
-      {/* ===== Admin Support Modal ===== */}
-      {isAdminChatOpen && user?.role !== "admin" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="flex h-[85vh] max-h-[640px] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111722] shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/[0.08] bg-[#0c1017] p-4 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="grid size-9 place-items-center rounded-full overflow-hidden bg-gradient-to-tr from-amber-400 to-teal-400 p-0.5">
-                  <div className="grid size-full place-items-center rounded-full overflow-hidden bg-[#0c1017]">
-                    <img src="/logo.png" alt="HM" className="w-full h-full object-cover" />
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    Hulu Market Support
-                    <span className={`size-2 rounded-full inline-block ${adminOnlineStatus?.isOnline ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
-                  </h3>
-                  <p className="text-[10px] text-slate-400">
-                    {adminOnlineStatus
-                      ? adminOnlineStatus.isOnline
-                        ? "Admin is online"
-                        : adminOnlineStatus.label
-                      : "Typically replies within 5 minutes"}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAdminChatOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-white/10 hover:text-white"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 [scrollbar-color:#334155_transparent] [scrollbar-width:thin]">
-              {adminMessages.map((m, idx) => (
-                <div key={idx} className={`flex ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[80%] rounded-2xl p-3 text-xs leading-relaxed ${
-                      m.sender === "user"
-                        ? "bg-teal-500 text-slate-950 font-medium rounded-tr-none shadow-md shadow-teal-500/20"
-                        : "bg-[#18212f] text-slate-200 border border-white/[0.08] rounded-tl-none shadow-md"
-                    }`}
-                  >
-                    <p>{m.text}</p>
-                    <span className={`mt-1 block text-[9px] text-right ${m.sender === "user" ? "text-slate-800" : "text-slate-400"}`}>
-                      {m.time}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <form onSubmit={handleSendAdminSupport} className="flex items-center gap-2 border-t border-white/[0.08] bg-[#0c1017] p-3 shrink-0">
-              <input
-                type="text"
-                value={adminChatInput}
-                onChange={(e) => setAdminChatInput(e.target.value)}
-                placeholder="Type your message to support..."
-                className="flex-1 bg-transparent px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="grid size-8 place-items-center rounded-lg bg-teal-500 text-slate-950 shadow-md transition hover:bg-teal-400"
-              >
-                <Send size={14} />
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* ===== Feature 11: Submit Dispute Modal ===== */}
       {showDisputeModal && selectedOrder && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
-          <form onSubmit={handleSubmitDispute} className="w-full max-w-md rounded-2xl border border-rose-500/30 bg-[#0c1017] shadow-2xl p-6 space-y-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/90 p-2 backdrop-blur-md sm:p-4">
+          <form onSubmit={handleSubmitDispute} className="my-auto max-h-[calc(100dvh-1rem)] w-full max-w-md space-y-4 overflow-y-auto rounded-2xl border border-rose-500/30 bg-[#0c1017] p-4 shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:p-6">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-white">Submit Order Dispute</h3>
@@ -1796,8 +1882,8 @@ export default function InboxPage() {
 
       {/* ===== Feature 10: Admin Trade Closure Confirmation Modal ===== */}
       {showAdminCloseConfirm && selectedOrder && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-rose-500/30 bg-[#0c1017] shadow-2xl shadow-black/80 p-6 space-y-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/90 p-2 backdrop-blur-md sm:p-4">
+          <div className="my-auto max-h-[calc(100dvh-1rem)] w-full max-w-sm space-y-4 overflow-y-auto rounded-2xl border border-rose-500/30 bg-[#0c1017] p-4 shadow-2xl shadow-black/80 sm:max-h-[calc(100dvh-2rem)] sm:p-6">
             <div className="flex items-center gap-3">
               <div className="grid size-10 place-items-center rounded-xl bg-rose-500/10 border border-rose-500/20 shrink-0">
                 <Lock size={20} className="text-rose-400" />
@@ -1841,8 +1927,8 @@ export default function InboxPage() {
 
       {/* ===== Feature 9: Digital Receipt Confirmation Modal ===== */}
       {showReceiptConfirm && selectedOrder && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-emerald-500/30 bg-[#0c1017] shadow-2xl shadow-black/80 p-6 space-y-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/90 p-2 backdrop-blur-md sm:p-4">
+          <div className="my-auto max-h-[calc(100dvh-1rem)] w-full max-w-sm space-y-4 overflow-y-auto rounded-2xl border border-emerald-500/30 bg-[#0c1017] p-4 shadow-2xl shadow-black/80 sm:max-h-[calc(100dvh-2rem)] sm:p-6">
             <div className="flex items-center gap-3">
               <div className="grid size-10 place-items-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 shrink-0">
                 <PackageCheck size={20} className="text-emerald-400" />

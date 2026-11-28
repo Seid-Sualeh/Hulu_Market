@@ -6,11 +6,13 @@ import { usePwaInstall } from "./usePwaInstall";
 interface PwaInstallButtonProps {
   variant?: "header" | "sidebar" | "banner" | "auth";
   className?: string;
+  compactOnSmallScreens?: boolean;
 }
 
 export default function PwaInstallButton({
   variant = "header",
   className = "",
+  compactOnSmallScreens = false,
 }: PwaInstallButtonProps) {
   const { isInstalled, installApp } = usePwaInstall();
 
@@ -31,7 +33,7 @@ export default function PwaInstallButton({
           <span className="hidden sm:inline bg-gradient-to-r from-amber-300 via-teal-200 to-emerald-300 bg-clip-text text-transparent font-extrabold tracking-wide">
             Install App
           </span>
-          <span className="sm:hidden font-extrabold text-amber-300">Install</span>
+          <span className={`sm:hidden font-extrabold text-amber-300 ${compactOnSmallScreens ? "max-[380px]:hidden" : ""}`}>Install</span>
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />

@@ -546,7 +546,7 @@ export default function SocialMediaPage() {
       )}
 
       {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-30 flex flex-col items-center gap-2">
+      <div className="fixed bottom-28 right-6 z-30 flex flex-col items-center gap-2 lg:bottom-6">
         <button
           type="button"
           onClick={() => router.push("/sell")}

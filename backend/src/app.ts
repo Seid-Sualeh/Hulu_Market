@@ -14,6 +14,7 @@ import { userRouter } from "./routes/user.js";
 import { escrowRouter } from "./routes/escrow.js";
 import { escrowDeliveriesRouter } from "./routes/escrowDeliveries.js";
 import { disputesRouter } from "./routes/disputes.js";
+import { supportRouter } from "./routes/support.js";
 import { uploadRouter } from "./routes/upload.js";
 import { getJwtSecret } from "./middleware/auth.js";
 
@@ -171,6 +172,10 @@ export function createApp(frontendOrigin?: string) {
   // Mount Disputes & Admin Dispute Handling routes (Feature 11)
   app.use("/disputes", disputesRouter);
   app.use("/api/disputes", disputesRouter);
+
+  // User-to-admin support conversations
+  app.use("/support", supportRouter);
+  app.use("/api/support", supportRouter);
 
   // Mount Upload route for file uploads (screenshots, voice, images)
   app.use("/upload", uploadRouter);

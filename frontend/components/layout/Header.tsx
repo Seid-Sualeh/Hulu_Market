@@ -58,18 +58,22 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-20 flex h-16 w-full items-center justify-between border-b border-white/[0.06] bg-[#0b0f14]/80 px-4 backdrop-blur-md lg:px-8">
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         {/* Left spacing for mobile menu */}
         <div className="w-9 lg:hidden" />
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs font-semibold text-emerald-400">
+        <div
+          title="Online"
+          aria-label="Online"
+          className="flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 max-[420px]:px-2"
+        >
           <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Online</span>
+          <span className="max-[420px]:hidden">Online</span>
         </div>
       </div>
 
-      <div className="flex items-center gap-2.5 sm:gap-3">
+      <div className="flex shrink-0 items-center gap-2.5 sm:gap-3 max-[380px]:gap-1">
         {/* PWA Install Button (colored, visible until installed) */}
-        <PwaInstallButton variant="header" />
+        <PwaInstallButton variant="header" compactOnSmallScreens />
 
         {/* Task 3: Contact Us alternating every 5 seconds between Telegram and Phone Call */}
         <div className="flex items-center transition-all duration-300">
@@ -123,9 +127,13 @@ export default function Header() {
               )}
             </Link>
 
-            <div className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 shadow-sm shadow-amber-950/20">
+            <div
+              title={`${user?.balance ?? 0} ETB`}
+              aria-label={`Balance: ${user?.balance ?? 0} ETB`}
+              className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 shadow-sm shadow-amber-950/20 max-[420px]:px-2"
+            >
               <Coins size={14} className="text-amber-400" />
-              <span>{user?.balance ?? 0} ETB</span>
+              <span className="max-[420px]:hidden">{user?.balance ?? 0} ETB</span>
             </div>
 
             {user?.role === "admin" ? (

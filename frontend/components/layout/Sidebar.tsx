@@ -212,11 +212,13 @@ export function SidebarNavigation({
 
     const fetchBadgeCounts = async () => {
       try {
+        let escrowUnreadCount: number | null = null;
         // 1. Fetch inbox message / active escrow trades count
         const inboxRes = await fetchBackend("escrow/unread-count");
         if (inboxRes.ok) {
           const data = await inboxRes.json();
           if (data.success && typeof data.count === "number") {
+            escrowUnreadCount = data.count;
             setInboxCount(data.count);
           }
         }
@@ -229,13 +231,28 @@ export function SidebarNavigation({
             setUnreadNotifications(data.count);
           }
         }
+
+        if (user?.role === "admin" && escrowUnreadCount !== null) {
+          const supportRes = await fetchBackend("support/conversations");
+          if (supportRes.ok) {
+            const supportData = await supportRes.json();
+            if (supportData.success && Array.isArray(supportData.conversations)) {
+              const supportUnreadCount = supportData.conversations.reduce(
+                (total: number, conversation: { unread_count?: number | string }) =>
+                  total + (Number(conversation.unread_count) || 0),
+                0
+              );
+              setInboxCount(escrowUnreadCount + supportUnreadCount);
+            }
+          }
+        }
       } catch {}
     };
 
     fetchBadgeCounts();
     const timer = setInterval(fetchBadgeCounts, 15000);
     return () => clearInterval(timer);
-  }, [mounted, signedIn, user?.id]);
+  }, [mounted, signedIn, user?.id, user?.role]);
 
   const getBadgeCount = (item: NavigationEntry): number | undefined => {
     if (item.label === "Inbox" || (item.type === "link" && item.href === "/inbox")) {
